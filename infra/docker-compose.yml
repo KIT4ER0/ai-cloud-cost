@@ -25,5 +25,40 @@ services:
     depends_on:
       - db
 
+  api:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.api
+    container_name: ai_cost_api
+    ports:
+      - "8000:8000"
+    volumes:
+      - ../api:/app/api
+      - ../requirements.txt:/app/requirements.txt
+    environment:
+      - PYTHONUNBUFFERED=1
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_NAME=ai_cost
+      - DB_USER=ai_user
+      - DB_PASSWORD=ai_password
+    depends_on:
+      - db
+
+  ui:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.ui
+    container_name: ai_cost_ui
+    ports:
+      - "8501:8501"
+    volumes:
+      - ../ui:/app/ui
+      - ../requirements.txt:/app/requirements.txt
+    environment:
+      - API_URL=http://api:8000
+    depends_on:
+      - api
+
 volumes:
   dbdata:
