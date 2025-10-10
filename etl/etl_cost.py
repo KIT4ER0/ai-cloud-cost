@@ -9,6 +9,7 @@ ETL: AWS Cost Explorer -> raw.costs (LEAN)
 """
 
 from __future__ import annotations
+from etl.cleaners import clean_costs_df
 
 import os
 import re
@@ -223,15 +224,21 @@ def run(
         accounts=accounts,
         regions=regions,
     )
-    if not rows:
+
+    # ✅ ใส่บล็อกนี้: ทำความสะอาดด้วย Pandas
+    df = clean_costs_df(rows, infer_region=True)
+    records = df.to_dict(orient="records")
+
+    if not records:
         print("ETL Cost: no rows fetched (possibly zero cost in the selected period).")
         return
 
     total = 0
-    for chunk in batches(rows, size=batch_size):
-        upsert_many_costs(chunk)
-        total += len(chunk)
+    for i in range(0, len(records), batch_size):
+        upsert_many_costs(records[i:i+batch_size])
+        total += min(batch_size, len(records) - i)
     print(f"ETL Cost: upserted {total} rows")
+
 
 
 # ---------------------------
