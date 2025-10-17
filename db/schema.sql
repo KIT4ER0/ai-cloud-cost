@@ -133,7 +133,13 @@ COMMENT ON TABLE core.recommendations IS 'Optimization recommendations (rules/ML
 -- 3.1 mart.daily_cost_features : cost + features รายวัน (พร้อมใช้ BI)
 -- หมายเหตุ: CREATE MATERIALIZED VIEW IF NOT EXISTS จะไม่อัปเดตนิยามเดิมอัตโนมัติ
 -- ถ้าต้องแก้ definition ใหม่ ให้ DROP แล้ว CREATE ใหม่
-CREATE MATERIALIZED VIEW IF NOT EXISTS mart.daily_cost_features AS
+CREATE SCHEMA IF NOT EXISTS mart;
+
+-- ลบของเดิมถ้ามี (เพื่ออัปเดตนิยาม)
+DROP MATERIALIZED VIEW IF EXISTS mart.daily_cost_features;
+
+-- 1) สร้าง Materialized View
+CREATE MATERIALIZED VIEW mart.daily_cost_features AS
 SELECT
   f.feature_date,
   f.account_id, f.region, f.service, f.resource_id,
@@ -143,19 +149,24 @@ SELECT
   f.rds_cpu_p95, f.rds_conn_avg, f.rds_free_storage_gb_min
 FROM core.features f
 LEFT JOIN (
-  SELECT usage_date, account_id, region, service,
-         SUM(amount_usd) AS amount_usd
+  SELECT usage_date, account_id, region, service, SUM(amount_usd) AS amount_usd
   FROM raw.costs
   GROUP BY 1,2,3,4
 ) c
-  ON c.usage_date=f.feature_date
- AND c.account_id=f.account_id
- AND c.region=f.region
- AND c.service=f.service
-WITH NO DATA;  -- สร้างก่อน แล้วค่อย REFRESH เติมข้อมูล
+  ON (c.usage_date, c.account_id, c.region, c.service)
+   = (f.feature_date, f.account_id, f.region, f.service)
+WITH NO DATA;   -- สร้างก่อน ค่อย REFRESH เติมข้อมูล
 
-CREATE INDEX IF NOT EXISTS ix_mart_daily_cost_features
+-- 2) ดัชนีสำหรับอ่านเร็ว
+CREATE INDEX IF NOT EXISTS ix_mart_dcf_date_svc_acct
   ON mart.daily_cost_features (feature_date, service, account_id);
+CREATE INDEX IF NOT EXISTS ix_mart_dcf_resource
+  ON mart.daily_cost_features (service, resource_id);
+
+-- 3) ดัชนียูนีค (เพื่อใช้ REFRESH CONCURRENTLY ได้)
+CREATE UNIQUE INDEX IF NOT EXISTS ux_mart_dcf_unique
+  ON mart.daily_cost_features (feature_date, account_id, region, service, resource_id);
+
 
 COMMENT ON MATERIALIZED VIEW mart.daily_cost_features IS 'Daily join of cost and per-resource features for BI.';
 
