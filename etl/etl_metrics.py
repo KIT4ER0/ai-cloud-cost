@@ -9,6 +9,7 @@ Services: EC2, S3, RDS, Lambda
 """
 
 from __future__ import annotations
+from etl.cleaners import clean_metrics_df
 
 import os
 import json
@@ -419,17 +420,9 @@ def fetch_lambda_metrics(period: int, hours_back: int) -> List[Dict]:
 # Driver
 # ---------------------------
 
-def run(
-    services: List[str],
-    hours_back: int = 24,
-    period: int = 300,
-    s3_buckets: Optional[List[str]] = None,
-    batch_size: int = 5000,
-) -> None:
+def run(services: List[str], hours_back: int = 24, period: int = 300,
+        s3_buckets: Optional[List[str]] = None, batch_size: int = 5000) -> None:
     services = [s.lower().strip() for s in services]
-    acct = _acct()
-    print(f"[etl_metrics] account={acct} region={_region_default()} services={services} hours_back={hours_back} period={period}")
-
     all_rows: List[Dict] = []
 
     if "ec2" in services:
@@ -444,22 +437,23 @@ def run(
         all_rows += fetch_rds_core_metrics(period=period, hours_back=hours_back)
 
     if "lambda" in services:
-        # Lambda metrics มักเก็บ period เล็กกว่า (เช่น 60)
         lam_period = min(period, 60)
         all_rows += fetch_lambda_metrics(period=lam_period, hours_back=hours_back)
 
-    # normalize + upsert batch
-    if not all_rows:
+    # 🔽🔽 ใส่บล็อกนี้ 🔽🔽
+    df = clean_metrics_df(all_rows)
+    records = df.to_dict(orient="records")
+
+    if not records:
         print("[etl_metrics] no rows fetched.")
         return
 
-    normed = [normalize_metric_row(r) for r in all_rows]
-
     total = 0
-    for chunk in batches(normed, size=batch_size):
-        upsert_many_metrics(chunk)
-        total += len(chunk)
+    for i in range(0, len(records), batch_size):
+        upsert_many_metrics(records[i:i+batch_size])
+        total += min(batch_size, len(records) - i)
     print(f"[etl_metrics] upserted {total} rows")
+
 
 # ---------------------------
 # CLI
