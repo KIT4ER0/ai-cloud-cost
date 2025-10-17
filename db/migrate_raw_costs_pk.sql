@@ -11,6 +11,8 @@
 
 BEGIN;
 
+
+
 -- 1) Normalize NULLs to 'unknown' first
 UPDATE raw.costs SET region = 'unknown'     WHERE region IS NULL;
 UPDATE raw.costs SET usage_type = 'unknown' WHERE usage_type IS NULL;
