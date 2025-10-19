@@ -4,41 +4,52 @@ from db import q
 
 st.title("📊 Cost Explorer")
 
-# ดึงค่าตัวเลือก
-accounts = q("SELECT DISTINCT payer_account_id AS acct FROM cur_costs ORDER BY 1")
-services = q("SELECT DISTINCT product_service AS svc FROM cur_costs ORDER BY 1")
+# --- โหลดตัวเลือก ---
+accounts = q("SELECT DISTINCT account_id AS acct FROM raw.costs ORDER BY 1")
+services = q("SELECT DISTINCT service AS svc FROM raw.costs ORDER BY 1")
 
 colA, colB, colC = st.columns(3)
-acct = colA.multiselect("Account", accounts["acct"])
-svc  = colB.multiselect("Service", services["svc"])
+acct = colA.multiselect("Account", accounts["acct"].tolist())
+svc  = colB.multiselect("Service", services["svc"].tolist())
 days = colC.slider("Lookback (days)", 7, 180, 30)
 
-# สร้าง where แบบยืดหยุ่น
-where = ["usage_start_time >= now() - INTERVAL ':d days'".replace(":d", str(days))]
-params = {}
+# --- สร้าง WHERE clause ให้ตรง schema ---
+where = ["usage_date >= current_date - make_interval(days => :days)"]
+params: dict = {"days": days}
+
 if acct:
-    where.append("payer_account_id = ANY(:acct)")
+    where.append("account_id = ANY(:acct)")
     params["acct"] = acct
 if svc:
-    where.append("product_service = ANY(:svc)")
+    where.append("service = ANY(:svc)")
     params["svc"] = svc
+
 WHERE = "WHERE " + " AND ".join(where)
 
+# --- Timeseries: Daily Cost ---
 sql_ts = f"""
-SELECT date_trunc('day', usage_start_time) AS day,
-       SUM(unblended_cost) AS cost
-FROM cur_costs
+SELECT usage_date AS day,
+       SUM(amount_usd) AS cost
+FROM raw.costs
 {WHERE}
-GROUP BY 1 ORDER BY 1
+GROUP BY 1
+ORDER BY 1
 """
-df = q(sql_ts, params)
-st.plotly_chart(px.line(df, x="day", y="cost", title="Daily Cost"), use_container_width=True)
+df_ts = q(sql_ts, params)
 
+if df_ts.empty:
+    st.warning("ไม่พบข้อมูลในช่วงที่เลือก")
+else:
+    st.plotly_chart(px.line(df_ts, x="day", y="cost", title="Daily Cost"), use_container_width=True)
+
+# --- Breakdown: Cost by Service ---
 sql_break = f"""
-SELECT product_service AS service, SUM(unblended_cost) AS cost
-FROM cur_costs
+SELECT service,
+       SUM(amount_usd) AS cost
+FROM raw.costs
 {WHERE}
-GROUP BY 1 ORDER BY cost DESC
+GROUP BY 1
+ORDER BY cost DESC
 """
 st.subheader("Cost by Service")
 st.dataframe(q(sql_break, params))
