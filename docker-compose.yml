@@ -1,17 +1,72 @@
-version: '3.8'
-
+version: "3.9"
 services:
   db:
-    image: postgres:15
-    container_name: cloudcost_db
+    image: postgres:16
+    container_name: ai_cost_db
+    restart: always
     environment:
-      POSTGRES_USER: user
-      POSTGRES_PASSWORD: password
-      POSTGRES_DB: cloudcost
+      POSTGRES_DB: ai_cost
+      POSTGRES_USER: ai_user
+      POSTGRES_PASSWORD: ai_password
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - dbdata:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ai_user -d ai_cost" ]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: ai_cost_pgadmin
+    restart: always
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@example.com
+      PGADMIN_DEFAULT_PASSWORD: admin123
+    ports:
+      - "5050:80"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  api:
+    build:
+      context: .
+      dockerfile: infra/Dockerfile.api
+    container_name: ai_cost_api
+    ports:
+      - "8000:8000"
+    environment:
+      - PYTHONUNBUFFERED=1
+      - DATABASE_URL=postgresql+psycopg2://ai_user:ai_password@db:5432/ai_cost
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app/backend # dev: แก้โค้ดสดได้
+    command: >
+      uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
+
+  ui:
+    build:
+      context: .
+      dockerfile: infra/Dockerfile.ui
+    container_name: ai_cost_ui
+    ports:
+      - "8503:8501"
+    environment:
+      - API_URL=http://api:8000
+      - DATABASE_URL=postgresql+psycopg2://ai_user:ai_password@db:5432/ai_cost
+    depends_on:
+      db:
+        condition: service_healthy
+      api:
+        condition: service_started
+    volumes:
+      - ./frontend:/app/frontend # dev: แก้ UI สดได้
+    command: >
+      streamlit run frontend/Home.py --server.port=8501 --server.address=0.0.0.0 --server.headless=true
 volumes:
-  postgres_data:
+  dbdata:

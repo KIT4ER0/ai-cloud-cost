@@ -1,13 +1,13 @@
-from fastapi import FastAPI
+from fastapi import APIRouter
 import os, psycopg2
 
-app = FastAPI(title="AI Cost Optimizer API")
+router = APIRouter(tags=["System"])
 
-@app.get("/health")
+@router.get("/health")
 def health():
     return {"status": "ok"}
 
-@app.get("/db-check")
+@router.get("/db-check")
 def db_check():
     try:
         conn = psycopg2.connect(
