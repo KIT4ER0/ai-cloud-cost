@@ -15,25 +15,41 @@ inject_custom_css()
 st.header("Monitoring")
 
 # Service Type Filter
-service_type = st.radio("Service Type", ["EC2", "RDS", "Lambda", "S3"], horizontal=True)
+# Service Type Filter
+if "monitoring_service_type" not in st.session_state:
+    st.session_state.monitoring_service_type = "EC2"
+
+cols = st.columns(4)
+services = ["EC2", "RDS", "Lambda", "S3"]
+
+for i, service in enumerate(services):
+    if cols[i].button(service, 
+                      key=f"btn_{service}", 
+                      use_container_width=True, 
+                      type="primary" if st.session_state.monitoring_service_type == service else "secondary"):
+        st.session_state.monitoring_service_type = service
+        st.rerun()
+
+service_type = st.session_state.monitoring_service_type
 
 instances = fetch_instances()
 # Filter by type
 filtered_inst = [i for i in instances if service_type in i.get("service_type", "")]
 
+selected_id = None
+
 if not filtered_inst:
-    st.info("No instances found")
-    st.stop()
+    st.info(f"No active {service_type} instances found")
+else:
+    # Table with selection
+    df = pd.DataFrame(filtered_inst)
+    
+    st.dataframe(df, use_container_width=True)
 
-# Table with selection
-df = pd.DataFrame(filtered_inst)
-
-# Streamlit dataframe with selection is tricky without plugins like aggrid, 
-# but st.dataframe has on_select in newer versions or we use a selectbox
-# Let's use a selectbox for simplicity and robustness
-selected_id = st.selectbox("Select Instance to Monitor", df["instance_id"].tolist(), format_func=lambda x: f"{x} ({df[df['instance_id']==x]['name'].values[0]})")
-
-st.dataframe(df)
+    # Streamlit dataframe with selection is tricky without plugins like aggrid, 
+    # but st.dataframe has on_select in newer versions or we use a selectbox
+    # Let's use a selectbox for simplicity and robustness
+    selected_id = st.selectbox("Select Instance to Monitor", df["instance_id"].tolist(), format_func=lambda x: f"{x} ({df[df['instance_id']==x]['name'].values[0]})")
 
 if selected_id:
     st.subheader(f"Metrics: {selected_id}")

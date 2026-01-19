@@ -11,15 +11,18 @@ def inject_custom_css():
     
     /* Headings */
     h1, h2, h3 {
-        color: #111827 !important;
+        color: #111827;
         font-family: 'Inter', sans-serif;
     }
     h1 {
+        font-size: 2.5rem !important; /* Increased */
         background: -webkit-linear-gradient(45deg, #7C3AED, #9333EA);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
         font-weight: 800;
     }
+    h2 { font-size: 2rem !important; } /* Added */
+    h3 { font-size: 1.5rem; } /* Added/Increased */
     
     /* Metric Cards */
     div[data-testid="stMetric"] {
@@ -47,9 +50,9 @@ def inject_custom_css():
         background-color: white;
         /* border: 1px solid #7C3AED;  Removed per user request */
         border-radius: 16px;
-        padding: 20px;
+        padding: 15px;
         box-shadow: 0 4px 6px -1px rgba(124, 58, 237, 0.1), 0 2px 4px -1px rgba(124, 58, 237, 0.06);
-        height: 400px;
+        height: 500px; /* Unified to 500px */
         display: flex;
         flex-direction: column;
         overflow-y: auto;
@@ -60,10 +63,10 @@ def inject_custom_css():
         background-color: white;
         /* border: 1px solid #7C3AED; Removed per user request */
         border-radius: 16px;
-        padding: 10px;
+        padding: 5px;
         box-shadow: 0 4px 6px -1px rgba(124, 58, 237, 0.1), 0 2px 4px -1px rgba(124, 58, 237, 0.06);
-        height: 400px !important; /* Force height match */
-    }    
+        height: 500px !important; /* Unified to 500px */
+    }
     /* Warning Item */
     .warning-item {
         display: flex;
@@ -107,6 +110,102 @@ def inject_custom_css():
         background: linear-gradient(90deg, #6D28D9 0%, #5B21B6 100%);
         box-shadow: 0 0 10px rgba(124, 58, 237, 0.5);
     }
+
+    /* Warning List Buttons (Secondary/Ghost style) - targeted via key or general override if needed */
+    /* Targeting buttons in the main area specifically if we can, or just adding a specific class helper? 
+       Streamlit doesn't support adding classes easily. 
+       We will overwrite the default button style for "secondary" type logic if we use type="secondary", 
+       but st.button doesn't strictly have types like "primary" that imply distinct CSS classes easily accessible. 
+       
+       Let's try to style ALL buttons with a specific look, OR assume the Sidebar "Logout" is the only other button.
+       Logout button is usually small.
+       
+       We'll style buttons to be 100% width and align left for the warning list feel. 
+    */
+    /* Container reset for counters */
+    [data-testid="stVerticalBlockBorderWrapper"]:has(#warning-list-group) {
+        counter-reset: warning-counter;
+    }
+
+    /* Target ONLY buttons inside the Warning Box */
+    [data-testid="stVerticalBlockBorderWrapper"]:has(#warning-list-group) .stButton button {
+        width: 100% !important;
+        text-align: left !important;
+        justify-content: flex-start !important;
+        height: auto !important;
+        white-space: pre-wrap !important;
+        padding: 16px !important;
+        padding-left: 60px !important; /* Space for Badge */
+        padding-right: 40px !important; /* Space for Chevron */
+        background: white !important;
+        color: #111827 !important;
+        border: 1px solid #E5E7EB !important;
+        border-radius: 12px !important;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05) !important;
+        font-weight: 400 !important;
+        margin-bottom: 8px !important;
+        position: relative !important;
+        display: flex !important;
+        align-items: center !important;
+    }
+    
+    /* Boxed Number Badge via ::before */
+    [data-testid="stVerticalBlockBorderWrapper"]:has(#warning-list-group) .stButton button::before {
+        counter-increment: warning-counter;
+        content: counter(warning-counter);
+        position: absolute;
+        left: 16px;
+        top: 50%;
+        transform: translateY(-50%);
+        width: 28px;
+        height: 28px;
+        background: #F3F4F6;
+        border: 1px solid #E5E7EB;
+        border-radius: 6px;
+        color: #4B5563;
+        font-weight: 600;
+        font-size: 0.85rem;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 1;
+    }
+
+    /* Chevron */
+    [data-testid="stVerticalBlockBorderWrapper"]:has(#warning-list-group) .stButton button::after {
+        content: "›";
+        position: absolute;
+        right: 15px;
+        top: 50%;
+        transform: translateY(-55%);
+        font-size: 1.5rem;
+        color: #9CA3AF;
+        font-weight: 400;
+        line-height: 1;
+    }
+
+    /* Hover State */
+    [data-testid="stVerticalBlockBorderWrapper"]:has(#warning-list-group) .stButton button:hover {
+        background: #F9FAFB !important;
+        border-color: #D1D5DB !important;
+        color: #111827 !important;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05) !important;
+        transform: translateY(-1px);
+    }
+    
+    /* Text styling wrapper */
+    [data-testid="stVerticalBlockBorderWrapper"]:has(#warning-list-group) .stButton button p {
+        width: 100%;
+        margin: 0;
+        line-height: 1.4;
+    }
+    
+    /* Title (First Line) Bold */
+    [data-testid="stVerticalBlockBorderWrapper"]:has(#warning-list-group) .stButton button p::first-line {
+        font-weight: 600;
+        color: #111827;
+        font-size: 0.95rem;
+    }
     
     /* Sidebar */
     section[data-testid="stSidebar"] {
@@ -145,7 +244,7 @@ def inject_custom_css():
     }
     
     .rec-title {
-        font-size: 1.1rem;
+        font-size: 1.25rem; /* Increased */
         font-weight: 700;
         color: #111827;
         margin-bottom: 5px;
@@ -153,8 +252,8 @@ def inject_custom_css():
     }
     .rec-desc {
         color: #6B7280;
-        font-size: 0.9rem;
-        line-height: 1.5;
+        font-size: 1rem; /* Increased */
+        line-height: 1.6;
         margin-bottom: 20px;
     }
     .rec-badge {

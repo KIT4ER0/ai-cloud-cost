@@ -123,21 +123,41 @@ def show_cost_detail_page():
         return
 
     # Summary Metrics
-    with st.container(border=True):
-        st.subheader("Total Cost")
-        st.metric(label="Current Month", value=f"${data['total_cost']:,.2f}")
-        st.caption(f"Breakdown of costs for {service_name}")
+    c1, c2 = st.columns([1, 2])
+    with c1:
+        with st.container(border=True):
+            st.metric(label="Total Cost (Current Month)", value=f"${data['total_cost']:,.2f}")
+            st.caption(f"Spending for {service_name}")
+
+    with c2:
+        # Add a mini chart here if data permits, or just leave as cleaner layout
+        # Let's add the breakdown pie chart here for better context
+        df_display = pd.DataFrame(list(data['breakdown'].items()), columns=["Usage Type", "Cost"])
+        if not df_display.empty:
+            fig = px.pie(df_display, values="Cost", names="Usage Type", hole=0.4, 
+                         color_discrete_sequence=px.colors.qualitative.Prism)
+            fig.update_layout(margin=dict(t=0, b=0, l=0, r=0), height=150, showlegend=True)
+            st.plotly_chart(fig, use_container_width=True)
         
     st.write("")
     
     # Detailed Table
-    st.subheader("Cost Items")
+    st.subheader("Cost Breakdown Details")
     with st.container(border=True):
-        # Convert dict to clean DF
-        df_display = pd.DataFrame(list(data['breakdown'].items()), columns=["Usage Type", "Cost ($)"])
-        # Format Cost column
-        df_display["Cost ($)"] = df_display["Cost ($)"].apply(lambda x: f"${x:,.2f}")
-        st.dataframe(df_display, use_container_width=True, hide_index=True)
+        if not df_display.empty:
+            # Add formatted column
+            df_display["Cost ($)"] = df_display["Cost"].apply(lambda x: f"${x:,.2f}")
+            st.dataframe(
+                df_display[["Usage Type", "Cost ($)"]], 
+                use_container_width=True, 
+                hide_index=True,
+                column_config={
+                    "Usage Type": st.column_config.TextColumn("Usage Type", width="medium"),
+                    "Cost ($)": st.column_config.TextColumn("Cost", width="small"),
+                }
+            )
+        else:
+            st.info("No detailed breakdown available")
 
 if st.session_state.selected_service:
     show_cost_detail_page()
