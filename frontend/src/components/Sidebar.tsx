@@ -19,8 +19,8 @@ export function Sidebar({ className }: SidebarProps) {
     const links = [
         { name: "Dashboard", href: "/home", icon: LayoutDashboard },
         { name: "Cost Analysis", href: "/cost-analysis", icon: BarChart3 },
-        { name: "Forecast Cost", href: "/forecast-cost", icon: LineChart },
         { name: "Monitoring", href: "/monitoring", icon: Activity },
+        { name: "Forecast Cost", href: "/forecast-cost", icon: LineChart },
         { name: "Recommendations", href: "/recommend", icon: Lightbulb },
     ]
 
