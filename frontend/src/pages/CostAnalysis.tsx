@@ -32,7 +32,7 @@ import {
 import { TrendingUp, TrendingDown, DollarSign, Zap, Target, Calendar } from "lucide-react"
 
 // Types
-type TimeRange = "this_month" | "last_month" | "this_year" | "last_6_months"
+type TimeRange = "this_month" | "last_month" | "last_6_months" | "this_year"
 type ViewMode = "cost" | "change" | "usage"
 
 interface ServiceDistribution {
@@ -171,8 +171,8 @@ const costDriversData: Record<string, CostDriver[]> = {
 const timeRangePresets = [
     { value: "this_month", label: "This Month" },
     { value: "last_month", label: "Last Month" },
-    { value: "this_year", label: "This Year" },
     { value: "last_6_months", label: "Last 6 Months" },
+    { value: "this_year", label: "This Year" },
 ]
 
 // Custom tooltip for pie chart
