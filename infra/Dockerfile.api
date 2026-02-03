@@ -19,14 +19,14 @@ WORKDIR /app
 # xgboost ต้องมี libgomp1 บน Debian-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libgomp1 \
- && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/*
 
 # 1) ใส่ requirements ก่อน เพื่อ cache layer
 COPY requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r /app/requirements.txt
 
-# 2) คัดลอกโค้ด API
-COPY api/ /app/api/
+# 2) คัดลอกโค้ด Backend
+COPY backend/ /app/backend/
 
 EXPOSE 8000
-CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]
