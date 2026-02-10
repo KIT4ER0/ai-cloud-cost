@@ -3,7 +3,7 @@ from typing import List, Optional
 from datetime import datetime
 
 class UserCreate(BaseModel):
-    username: str
+    email: str
     password: str
 
 class Token(BaseModel):

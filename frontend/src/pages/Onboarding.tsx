@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronRight, Check, Copy, ExternalLink, Cloud, Loader2 } from 'lucide-react';
+import { Check, Copy, ExternalLink, Cloud, Loader2 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -9,6 +9,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { useNavigate } from 'react-router-dom';
+import { api } from '@/lib/api';
 
 // --- Step 1: Account Creation Schema ---
 const accountSchema = z.object({
@@ -37,12 +38,15 @@ export default function Onboarding() {
         resolver: zodResolver(accountSchema),
     });
 
-    const onAccountSubmit = (data: AccountFormValues) => {
-        console.log("Account Data:", data);
-        // Simulate API call
-        setTimeout(() => {
+    const onAccountSubmit = async (data: AccountFormValues) => {
+        try {
+            await api.auth.register({ email: data.email, password: data.password });
             setStep(2);
-        }, 500);
+        } catch (error: any) {
+            console.error("Registration failed:", error);
+            // You might want to set a form error here if you had a general error field
+            alert(error.message || "Registration failed");
+        }
     };
 
     const copyToClipboard = () => {

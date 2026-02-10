@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -26,14 +26,17 @@ export default function SignIn() {
         resolver: zodResolver(signInSchema),
     });
 
-    const onSubmit = (data: SignInFormValues) => {
+    const onSubmit = async (data: SignInFormValues) => {
         setIsLoading(true);
-        // Simulate API call
-        setTimeout(() => {
-            login(data.email);
-            setIsLoading(false);
+        try {
+            await login(data);
             navigate('/');
-        }, 1000);
+        } catch (error: any) {
+            console.error("Login failed:", error);
+            alert(error.message || "Invalid email or password");
+        } finally {
+            setIsLoading(false);
+        }
     };
 
     return (

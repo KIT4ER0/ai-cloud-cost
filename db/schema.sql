@@ -169,3 +169,25 @@ CREATE INDEX IF NOT EXISTS idx_recs_date     ON recommendations(rec_date);
 CREATE INDEX IF NOT EXISTS idx_recs_service  ON recommendations(service);
 CREATE INDEX IF NOT EXISTS idx_recs_status   ON recommendations(status);
 CREATE INDEX IF NOT EXISTS idx_recs_acct_reg ON recommendations(account_id, region);
+
+-- =========================
+-- Users
+-- =========================
+CREATE TABLE IF NOT EXISTS users (
+  user_id         BIGSERIAL PRIMARY KEY,
+  email           TEXT NOT NULL UNIQUE,
+  password_hash   TEXT NOT NULL,
+  created_at      TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+
+-- =========================
+-- Accounts-AWS
+-- =========================
+CREATE TABLE IF NOT EXISTS accounts_aws (
+  account_id     BIGSERIAL PRIMARY KEY,
+  user_id        BIGINT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+  aws_role_arn   TEXT NOT NULL,
+  external_id    TEXT NOT NULL,
+  updated_at     TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
