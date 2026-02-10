@@ -5,6 +5,8 @@ import CostAnalysis from "@/pages/CostAnalysis"
 import ForecastCost from "@/pages/ForecastCost"
 import Monitoring from "@/pages/Monitoring"
 import Recommend from "@/pages/Recommend"
+import Onboarding from "@/pages/Onboarding"
+import SignIn from "@/pages/SignIn"
 
 export const router = createBrowserRouter([
     {
@@ -37,4 +39,12 @@ export const router = createBrowserRouter([
             },
         ],
     },
-])
+    {
+        path: "/onboarding",
+        element: <Onboarding />,
+    },
+    {
+        path: "/signin",
+        element: <SignIn />,
+    },
+]);
