@@ -15,6 +15,15 @@ async function handleResponse<T>(response: Response): Promise<T> {
     return response.json();
 }
 
+function authHeaders(): Record<string, string> {
+    const token = localStorage.getItem('token');
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+    }
+    return headers;
+}
+
 export const api = {
     auth: {
         register: async (data: any) => {
@@ -33,5 +42,19 @@ export const api = {
             });
             return handleResponse<any>(response);
         }
-    }
+    },
+    monitoring: {
+        getResources: async (service: string) => {
+            const response = await fetch(`${BASE_URL}/api/monitoring/${service.toLowerCase()}`, {
+                headers: authHeaders(),
+            });
+            return handleResponse<any[]>(response);
+        },
+        getMetrics: async (service: string, resourceId: number) => {
+            const response = await fetch(`${BASE_URL}/api/monitoring/${service.toLowerCase()}/${resourceId}/metrics`, {
+                headers: authHeaders(),
+            });
+            return handleResponse<any[]>(response);
+        },
+    },
 };
