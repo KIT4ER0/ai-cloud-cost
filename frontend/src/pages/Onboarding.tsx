@@ -10,6 +10,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { useNavigate } from 'react-router-dom';
 import { api } from '@/lib/api';
+import { useAuthStore } from '@/store/useAuthStore';
 
 // --- Step 1: Account Creation Schema ---
 const accountSchema = z.object({
@@ -26,6 +27,7 @@ type AccountFormValues = z.infer<typeof accountSchema>;
 export default function Onboarding() {
     const [step, setStep] = useState(1);
     const navigate = useNavigate();
+    const initialize = useAuthStore((state) => state.initialize);
 
     // Step 2 State
     const [externalId] = useState("APP-12345-XYZ"); // Mocked ID
@@ -40,11 +42,15 @@ export default function Onboarding() {
 
     const onAccountSubmit = async (data: AccountFormValues) => {
         try {
-            await api.auth.register({ email: data.email, password: data.password });
+            const response = await api.auth.register({ email: data.email, password: data.password });
+            // Auto-login the user after registration
+            const token = response.access_token;
+            if (token) {
+                localStorage.setItem('token', token);
+            }
             setStep(2);
         } catch (error: any) {
             console.error("Registration failed:", error);
-            // You might want to set a form error here if you had a general error field
             alert(error.message || "Registration failed");
         }
     };
@@ -56,12 +62,13 @@ export default function Onboarding() {
     };
 
     const handleVerify = () => {
-        if (!roleArn) return; // Add better validation if needed
+        if (!roleArn) return;
         setIsVerifying(true);
         // Simulate verification
         setTimeout(() => {
             setIsVerifying(false);
-            navigate('/'); // Redirect to dashboard after success
+            initialize(); // Set auth state from saved token
+            navigate('/');
         }, 2000);
     };
 
