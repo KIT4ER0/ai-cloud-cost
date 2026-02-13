@@ -57,4 +57,12 @@ export const api = {
             return handleResponse<any[]>(response);
         },
     },
+    costs: {
+        getAnalysis: async (timeRange: string) => {
+            const response = await fetch(`${BASE_URL}/api/costs/analysis?time_range=${timeRange}`, {
+                headers: authHeaders(),
+            });
+            return handleResponse<any>(response);
+        }
+    }
 };

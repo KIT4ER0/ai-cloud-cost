@@ -119,3 +119,36 @@ class S3MetricOut(BaseModel):
     class Config:
         from_attributes = True
 
+
+# ---- Cost Analysis Schemas ----
+
+class CostTrendItem(BaseModel):
+    date: str
+    cost: float
+    projected: bool = False
+
+class ServiceCostDistribution(BaseModel):
+    name: str
+    value: float
+    color: str
+
+class CostDriverItem(BaseModel):
+    driver: str
+    usage: str
+    cost: float
+    prevCost: float
+    change: float
+    changePercent: float
+
+class KPIItem(BaseModel):
+    totalCost: float
+    prevTotalCost: float
+    topService: dict  # {name: str, cost: float}
+    avgDailyCost: float
+    projectedMonthEnd: float
+
+class CostAnalysisData(BaseModel):
+    summary: KPIItem
+    trend: List[CostTrendItem]
+    distribution: List[ServiceCostDistribution]
+    drivers: dict  # service_name -> List[CostDriverItem]

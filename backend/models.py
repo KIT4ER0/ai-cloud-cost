@@ -54,7 +54,7 @@ class EC2Resource(Base):
         schema_args
     )
 
-    ec2_resource_id = Column(BigInteger, primary_key=True, autoincrement=True)
+    ec2_resource_id = Column(PKType, primary_key=True, autoincrement=True)
     account_id = Column(String(12), nullable=False)
     region = Column(Text, nullable=False)
     instance_id = Column(Text, nullable=False)
@@ -68,7 +68,7 @@ class EC2Metric(Base):
     __tablename__ = "ec2_metrics"
     __table_args__ = schema_args
 
-    ec2_resource_id = Column(BigInteger, ForeignKey(f"{fk_prefix}ec2_resources.ec2_resource_id", ondelete="CASCADE"), primary_key=True)
+    ec2_resource_id = Column(PKType, ForeignKey(f"{fk_prefix}ec2_resources.ec2_resource_id", ondelete="CASCADE"), primary_key=True)
     metric_date = Column(Date, primary_key=True, index=True)
     cpu_p95 = Column(Float)
     network_out_gb_sum = Column(Float)
@@ -79,7 +79,7 @@ class EC2Cost(Base):
     __tablename__ = "ec2_costs"
     __table_args__ = schema_args
 
-    ec2_resource_id = Column(BigInteger, ForeignKey(f"{fk_prefix}ec2_resources.ec2_resource_id", ondelete="CASCADE"), primary_key=True)
+    ec2_resource_id = Column(PKType, ForeignKey(f"{fk_prefix}ec2_resources.ec2_resource_id", ondelete="CASCADE"), primary_key=True)
     usage_date = Column(Date, primary_key=True, index=True)
     usage_type = Column(Text, primary_key=True, default='total')
     amount_usd = Column(Numeric(14, 6), nullable=False, default=0)
@@ -97,7 +97,7 @@ class LambdaResource(Base):
         schema_args
     )
 
-    lambda_resource_id = Column(BigInteger, primary_key=True, autoincrement=True)
+    lambda_resource_id = Column(PKType, primary_key=True, autoincrement=True)
     account_id = Column(String(12), nullable=False)
     region = Column(Text, nullable=False)
     function_name = Column(Text, nullable=False)
@@ -113,7 +113,7 @@ class LambdaMetric(Base):
     __tablename__ = "lambda_metrics"
     __table_args__ = schema_args
 
-    lambda_resource_id = Column(BigInteger, ForeignKey(f"{fk_prefix}lambda_resources.lambda_resource_id", ondelete="CASCADE"), primary_key=True)
+    lambda_resource_id = Column(PKType, ForeignKey(f"{fk_prefix}lambda_resources.lambda_resource_id", ondelete="CASCADE"), primary_key=True)
     metric_date = Column(Date, primary_key=True, index=True)
     duration_p95_ms = Column(Float)
     invocations_sum = Column(Float)
@@ -125,7 +125,7 @@ class LambdaCost(Base):
     __tablename__ = "lambda_costs"
     __table_args__ = schema_args
 
-    lambda_resource_id = Column(BigInteger, ForeignKey(f"{fk_prefix}lambda_resources.lambda_resource_id", ondelete="CASCADE"), primary_key=True)
+    lambda_resource_id = Column(PKType, ForeignKey(f"{fk_prefix}lambda_resources.lambda_resource_id", ondelete="CASCADE"), primary_key=True)
     usage_date = Column(Date, primary_key=True, index=True)
     usage_type = Column(Text, primary_key=True, default='total')
     amount_usd = Column(Numeric(14, 6), nullable=False, default=0)
@@ -143,7 +143,7 @@ class RDSResource(Base):
         schema_args
     )
 
-    rds_resource_id = Column(BigInteger, primary_key=True, autoincrement=True)
+    rds_resource_id = Column(PKType, primary_key=True, autoincrement=True)
     account_id = Column(String(12), nullable=False)
     region = Column(Text, nullable=False)
     db_identifier = Column(Text, nullable=False)
@@ -159,7 +159,7 @@ class RDSMetric(Base):
     __tablename__ = "rds_metrics"
     __table_args__ = schema_args
 
-    rds_resource_id = Column(BigInteger, ForeignKey(f"{fk_prefix}rds_resources.rds_resource_id", ondelete="CASCADE"), primary_key=True)
+    rds_resource_id = Column(PKType, ForeignKey(f"{fk_prefix}rds_resources.rds_resource_id", ondelete="CASCADE"), primary_key=True)
     metric_date = Column(Date, primary_key=True, index=True)
     cpu_p95 = Column(Float)
     db_conn_avg = Column(Float)
@@ -171,7 +171,7 @@ class RDSCost(Base):
     __tablename__ = "rds_costs"
     __table_args__ = schema_args
 
-    rds_resource_id = Column(BigInteger, ForeignKey(f"{fk_prefix}rds_resources.rds_resource_id", ondelete="CASCADE"), primary_key=True)
+    rds_resource_id = Column(PKType, ForeignKey(f"{fk_prefix}rds_resources.rds_resource_id", ondelete="CASCADE"), primary_key=True)
     usage_date = Column(Date, primary_key=True, index=True)
     usage_type = Column(Text, primary_key=True, default='total')
     amount_usd = Column(Numeric(14, 6), nullable=False, default=0)
@@ -189,7 +189,7 @@ class S3Resource(Base):
         schema_args
     )
 
-    s3_resource_id = Column(BigInteger, primary_key=True, autoincrement=True)
+    s3_resource_id = Column(PKType, primary_key=True, autoincrement=True)
     account_id = Column(String(12), nullable=False)
     region = Column(Text, nullable=False)
     bucket_name = Column(Text, nullable=False)
@@ -201,7 +201,7 @@ class S3Metric(Base):
     __tablename__ = "s3_metrics"
     __table_args__ = schema_args
 
-    s3_resource_id = Column(BigInteger, ForeignKey(f"{fk_prefix}s3_resources.s3_resource_id", ondelete="CASCADE"), primary_key=True)
+    s3_resource_id = Column(PKType, ForeignKey(f"{fk_prefix}s3_resources.s3_resource_id", ondelete="CASCADE"), primary_key=True)
     metric_date = Column(Date, primary_key=True, index=True)
     storage_gb_avg = Column(Float)
     number_of_objects = Column(Float)
@@ -212,7 +212,7 @@ class S3Cost(Base):
     __tablename__ = "s3_costs"
     __table_args__ = schema_args
 
-    s3_resource_id = Column(BigInteger, ForeignKey(f"{fk_prefix}s3_resources.s3_resource_id", ondelete="CASCADE"), primary_key=True)
+    s3_resource_id = Column(PKType, ForeignKey(f"{fk_prefix}s3_resources.s3_resource_id", ondelete="CASCADE"), primary_key=True)
     usage_date = Column(Date, primary_key=True, index=True)
     usage_type = Column(Text, primary_key=True, default='total')
     amount_usd = Column(Numeric(14, 6), nullable=False, default=0)
@@ -230,7 +230,7 @@ class Recommendation(Base):
         schema_args
     )
 
-    rec_id = Column(BigInteger, primary_key=True, autoincrement=True)
+    rec_id = Column(PKType, primary_key=True, autoincrement=True)
     rec_date = Column(Date, nullable=False, index=True)
     account_id = Column(String(12), nullable=False)
     region = Column(Text, nullable=False)
