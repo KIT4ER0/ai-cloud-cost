@@ -152,3 +152,28 @@ class CostAnalysisData(BaseModel):
     trend: List[CostTrendItem]
     distribution: List[ServiceCostDistribution]
     drivers: dict  # service_name -> List[CostDriverItem]
+
+
+# ---- AWS Connection Schemas ----
+
+class ExternalIdResponse(BaseModel):
+    external_id: str
+    account_id: int  # internal DB id for reference
+
+class AwsConnectRequest(BaseModel):
+    role_arn: str
+    session_name: str = "CloudCostSession"
+
+class AwsConnectResponse(BaseModel):
+    aws_account_id: str  # the 12-digit AWS account id
+    arn: str
+    status: str
+
+class AwsAccountOut(BaseModel):
+    account_id: int
+    aws_role_arn: str
+    external_id: str
+    aws_account_id: Optional[str] = None
+    class Config:
+        from_attributes = True
+

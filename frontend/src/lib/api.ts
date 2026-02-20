@@ -64,5 +64,22 @@ export const api = {
             });
             return handleResponse<any>(response);
         }
-    }
+    },
+    aws: {
+        generateExternalId: async () => {
+            const response = await fetch(`${BASE_URL}/api/aws/generate-external-id`, {
+                method: 'POST',
+                headers: authHeaders(),
+            });
+            return handleResponse<{ external_id: string; account_id: number }>(response);
+        },
+        connect: async (data: { role_arn: string; session_name?: string }) => {
+            const response = await fetch(`${BASE_URL}/api/aws/connect`, {
+                method: 'POST',
+                headers: authHeaders(),
+                body: JSON.stringify(data),
+            });
+            return handleResponse<{ aws_account_id: string; arn: string; status: string }>(response);
+        },
+    },
 };

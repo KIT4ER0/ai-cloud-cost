@@ -30,10 +30,12 @@ export default function Onboarding() {
     const initialize = useAuthStore((state) => state.initialize);
 
     // Step 2 State
-    const [externalId] = useState("APP-12345-XYZ"); // Mocked ID
+    const [externalId, setExternalId] = useState("");
+    const [isLoadingExternalId, setIsLoadingExternalId] = useState(false);
     const [roleArn, setRoleArn] = useState("");
     const [isVerifying, setIsVerifying] = useState(false);
     const [isCopied, setIsCopied] = useState(false);
+    const [error, setError] = useState("");
 
     // Form Hook
     const { register, handleSubmit, formState: { errors } } = useForm<AccountFormValues>({
@@ -42,13 +44,25 @@ export default function Onboarding() {
 
     const onAccountSubmit = async (data: AccountFormValues) => {
         try {
+            setError("");
             const response = await api.auth.register({ email: data.email, password: data.password });
             // Auto-login the user after registration
             const token = response.access_token;
             if (token) {
                 localStorage.setItem('token', token);
             }
+
+            // Generate external ID from backend
             setStep(2);
+            setIsLoadingExternalId(true);
+            try {
+                const awsResp = await api.aws.generateExternalId();
+                setExternalId(awsResp.external_id);
+            } catch (err: any) {
+                setError(err.message || "Failed to generate External ID");
+            } finally {
+                setIsLoadingExternalId(false);
+            }
         } catch (error: any) {
             console.error("Registration failed:", error);
             alert(error.message || "Registration failed");
@@ -61,15 +75,19 @@ export default function Onboarding() {
         setTimeout(() => setIsCopied(false), 2000);
     };
 
-    const handleVerify = () => {
+    const handleVerify = async () => {
         if (!roleArn) return;
         setIsVerifying(true);
-        // Simulate verification
-        setTimeout(() => {
-            setIsVerifying(false);
+        setError("");
+        try {
+            await api.aws.connect({ role_arn: roleArn });
             initialize(); // Set auth state from saved token
             navigate('/');
-        }, 2000);
+        } catch (err: any) {
+            setError(err.message || "Failed to connect AWS account");
+        } finally {
+            setIsVerifying(false);
+        }
     };
 
     return (
@@ -147,6 +165,13 @@ export default function Onboarding() {
                                     </CardDescription>
                                 </CardHeader>
                                 <CardContent className="space-y-6">
+                                    {/* Error Banner */}
+                                    {error && (
+                                        <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded p-3">
+                                            {error}
+                                        </div>
+                                    )}
+
                                     {/* Action 1: External ID */}
                                     <div className="space-y-2">
                                         <div className="flex justify-between items-center">
@@ -155,9 +180,15 @@ export default function Onboarding() {
                                         </div>
                                         <div className="flex items-center gap-2">
                                             <code className="flex-1 bg-slate-100 p-2 rounded border border-slate-200 text-sm font-mono text-slate-600">
-                                                {externalId}
+                                                {isLoadingExternalId ? (
+                                                    <span className="flex items-center gap-2 text-slate-400">
+                                                        <Loader2 className="h-3 w-3 animate-spin" /> Generating...
+                                                    </span>
+                                                ) : (
+                                                    externalId || "—"
+                                                )}
                                             </code>
-                                            <Button variant="outline" size="icon" onClick={copyToClipboard} title="Copy External ID">
+                                            <Button variant="outline" size="icon" onClick={copyToClipboard} disabled={isLoadingExternalId || !externalId} title="Copy External ID">
                                                 {isCopied ? <Check className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4" />}
                                             </Button>
                                         </div>
@@ -194,7 +225,7 @@ export default function Onboarding() {
                                     <Button
                                         className="w-full bg-blue-600 hover:bg-blue-700"
                                         onClick={handleVerify}
-                                        disabled={isVerifying || !roleArn}
+                                        disabled={isVerifying || !roleArn || isLoadingExternalId}
                                     >
                                         {isVerifying ? (
                                             <>

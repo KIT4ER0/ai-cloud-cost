@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from . import database, models
-from .routers import auth, costs, monitoring, recommendations, system
+from .routers import auth, aws, costs, monitoring, recommendations, system
 
 # Create DB tables
 models.Base.metadata.create_all(bind=database.engine)
@@ -19,6 +19,7 @@ app.add_middleware(
 
 # Include Routers
 app.include_router(auth.router)
+app.include_router(aws.router)
 app.include_router(costs.router)
 app.include_router(monitoring.router)
 app.include_router(recommendations.router)
