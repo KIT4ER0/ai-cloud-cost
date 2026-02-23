@@ -17,9 +17,8 @@ CREATE TABLE IF NOT EXISTS users (
   user_id        BIGSERIAL PRIMARY KEY,
   email          TEXT NOT NULL UNIQUE,
   password_hash  TEXT NOT NULL,
-  display_name   TEXT,
-  role           TEXT NOT NULL DEFAULT 'user',   -- user/admin
-  is_active      BOOLEAN NOT NULL DEFAULT TRUE
+  aws_role_arn   TEXT,
+  aws_external_id TEXT UNIQUE
 );
 
 -- =========================

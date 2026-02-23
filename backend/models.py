@@ -10,30 +10,11 @@ from datetime import datetime
 class User(Base):
     __tablename__ = "users"
 
-    id = Column(Integer, primary_key=True, index=True)
-    username = Column(String, unique=True, index=True)
-    hashed_password = Column(String)
-
-# =======================
-# Authentication (Updated User model)
-# =======================
-class User(Base):
-    __tablename__ = "users"
-
-# =======================
-# Authentication (Updated User model)
-# =======================
-class User(Base):
-    __tablename__ = "users"
-
-    # users table resides in public schema (default)
-    
     user_id = Column(BigInteger, primary_key=True, autoincrement=True)
     email = Column(Text, unique=True, nullable=False, index=True)
     password_hash = Column(Text, nullable=False)
-    display_name = Column(Text)
-    role = Column(Text, nullable=False, default='user')
-    is_active = Column(Boolean, nullable=False, default=True)
+    aws_role_arn = Column(Text)
+    aws_external_id = Column(Text, unique=True)
 
 
 class Service(Base):

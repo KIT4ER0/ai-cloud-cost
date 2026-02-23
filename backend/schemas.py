@@ -8,8 +8,6 @@ from datetime import datetime, date
 class UserCreate(BaseModel):
     email: EmailStr
     password: str
-    display_name: Optional[str] = None
-    role: str = "user"
 
 class UserLogin(BaseModel):
     email: EmailStr
@@ -18,9 +16,8 @@ class UserLogin(BaseModel):
 class UserResponse(BaseModel):
     user_id: int
     email: EmailStr
-    display_name: Optional[str] = None
-    role: str
-    is_active: bool
+    aws_role_arn: Optional[str] = None
+    aws_external_id: Optional[str] = None
 
     class Config:
         from_attributes = True
