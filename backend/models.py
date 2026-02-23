@@ -7,6 +7,7 @@ except ImportError:
 from datetime import datetime
 
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 class User(Base):
     __tablename__ = "users"
 
@@ -19,6 +20,13 @@ class User(Base):
 # =======================
 class User(Base):
     __tablename__ = "users"
+=======
+# =======================
+# Authentication (Updated User model)
+# =======================
+class User(Base):
+    __tablename__ = "users"
+>>>>>>> Stashed changes
     # users table resides in public schema (default)
     
     user_id = Column(BigInteger, primary_key=True, autoincrement=True)
@@ -27,6 +35,9 @@ class User(Base):
     display_name = Column(Text)
     role = Column(Text, nullable=False, default='user')
     is_active = Column(Boolean, nullable=False, default=True)
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
 
 class Service(Base):
@@ -54,6 +65,26 @@ class EC2Metric(Base):
         {"schema": "cloudcost"}
     )
 
+<<<<<<< Updated upstream
+=======
+    ec2_resource_id = Column(BigInteger, primary_key=True, autoincrement=True)
+    account_id = Column(String(12), nullable=False)
+    region = Column(Text, nullable=False)
+    instance_id = Column(Text, nullable=False)
+    instance_type = Column(Text)
+    state = Column(Text)
+
+    metrics = relationship("EC2Metric", back_populates="resource", cascade="all, delete-orphan")
+    costs = relationship("EC2Cost", back_populates="resource", cascade="all, delete-orphan")
+
+class EC2Metric(Base):
+    __tablename__ = "ec2_metrics"
+    __table_args__ = (
+        UniqueConstraint('ec2_resource_id', 'metric_date', name='uq_ec2_metrics_unique'),
+        {"schema": "cloudcost"}
+    )
+
+>>>>>>> Stashed changes
     ec2_metric_id = Column(BigInteger, primary_key=True, autoincrement=True)
     ec2_resource_id = Column(BigInteger, ForeignKey("cloudcost.ec2_resources.ec2_resource_id", ondelete="CASCADE"), nullable=False)
     metric_date = Column(Date, nullable=False, index=True)

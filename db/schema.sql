@@ -123,6 +123,18 @@ CREATE TABLE IF NOT EXISTS users (
 );
 
 -- =========================
+-- Users
+-- =========================
+CREATE TABLE IF NOT EXISTS users (
+  user_id        BIGSERIAL PRIMARY KEY,
+  email          TEXT NOT NULL UNIQUE,
+  password_hash  TEXT NOT NULL,
+  display_name   TEXT,
+  role           TEXT NOT NULL DEFAULT 'user',   -- user/admin
+  is_active      BOOLEAN NOT NULL DEFAULT TRUE
+);
+
+-- =========================
 -- 1) EC2
 -- =========================
 CREATE TABLE IF NOT EXISTS ec2_resources (
@@ -157,6 +169,9 @@ CREATE TABLE IF NOT EXISTS ec2_costs (
 CREATE INDEX IF NOT EXISTS idx_ec2_resources_acct_region ON ec2_resources(account_id, region);
 CREATE INDEX IF NOT EXISTS idx_ec2_metrics_date          ON ec2_metrics(metric_date);
 CREATE INDEX IF NOT EXISTS idx_ec2_costs_date            ON ec2_costs(usage_date);
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
 
 -- ดัชนีช่วยคิวรี
@@ -215,6 +230,9 @@ CREATE TABLE IF NOT EXISTS lambda_costs (
 CREATE INDEX IF NOT EXISTS idx_lambda_resources_acct_region ON lambda_resources(account_id, region);
 CREATE INDEX IF NOT EXISTS idx_lambda_metrics_date          ON lambda_metrics(metric_date);
 CREATE INDEX IF NOT EXISTS idx_lambda_costs_date            ON lambda_costs(usage_date);
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
 
 -- 3.1 mart.daily_cost_features : cost + features รายวัน (พร้อมใช้ BI)
@@ -274,6 +292,9 @@ CREATE TABLE IF NOT EXISTS rds_costs (
 CREATE INDEX IF NOT EXISTS idx_rds_resources_acct_region ON rds_resources(account_id, region);
 CREATE INDEX IF NOT EXISTS idx_rds_metrics_date          ON rds_metrics(metric_date);
 CREATE INDEX IF NOT EXISTS idx_rds_costs_date            ON rds_costs(usage_date);
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
 
 -- 3) ดัชนียูนีค (เพื่อใช้ REFRESH CONCURRENTLY ได้)
@@ -335,5 +356,9 @@ CREATE TABLE IF NOT EXISTS recommendations (
 CREATE INDEX IF NOT EXISTS idx_recs_date     ON recommendations(rec_date);
 CREATE INDEX IF NOT EXISTS idx_recs_service  ON recommendations(service);
 CREATE INDEX IF NOT EXISTS idx_recs_status   ON recommendations(status);
+<<<<<<< Updated upstream
+CREATE INDEX IF NOT EXISTS idx_recs_acct_reg ON recommendations(account_id, region);
+>>>>>>> Stashed changes
+=======
 CREATE INDEX IF NOT EXISTS idx_recs_acct_reg ON recommendations(account_id, region);
 >>>>>>> Stashed changes
