@@ -1,35 +1,54 @@
-from pydantic import BaseModel
-from typing import List, Optional
-from datetime import datetime
+from pydantic import BaseModel, EmailStr
+from typing import List, Optional, Dict, Any
+from datetime import datetime, date
 
+# =======================
+# Authentication / User
+# =======================
 class UserCreate(BaseModel):
-    username: str
+    email: EmailStr
     password: str
+    display_name: Optional[str] = None
+    role: str = "user"
+
+class UserLogin(BaseModel):
+    email: EmailStr
+    password: str
+
+class UserResponse(BaseModel):
+    user_id: int
+    email: EmailStr
+    display_name: Optional[str] = None
+    role: str
+    is_active: bool
+
+    class Config:
+        from_attributes = True
 
 class Token(BaseModel):
     access_token: str
     token_type: str
 
+class TokenData(BaseModel):
+    email: Optional[str] = None
+
+# =======================
+# Dashboard / Summary
+# =======================
 class CostSummary(BaseModel):
     total_cost_current_month: float
     forecast_cost_current_month: float
     active_services_count: int
-    top_anomalies: List[dict]
+    top_anomalies: List[Dict[str, Any]]
 
 class ServiceCost(BaseModel):
     service_name: str
     total_cost: float
-    breakdown: dict
+    breakdown: Dict[str, Any]
 
-class InstanceInfo(BaseModel):
-    instance_id: str
-    name: str
-    type: str
-    zone: str
-    ip: str
-    status: str
-    service_type: str
-
+# =======================
+# Resources & Metrics (Base Helpers)
+# =======================
 class MetricData(BaseModel):
     timestamp: datetime
     cpu_usage: float
@@ -38,7 +57,17 @@ class MetricData(BaseModel):
     disk_io: float
 
 class RecommendationItem(BaseModel):
-    title: str
-    impact: str
-    priority_score: int
-    description: str
+    rec_id: int
+    rec_date: date
+    account_id: str
+    region: str
+    service: str
+    resource_key: str
+    rec_type: str
+    details: Dict[str, Any]
+    est_saving_usd: Optional[float]
+    confidence: Optional[float]
+    status: str
+
+    class Config:
+        from_attributes = True
