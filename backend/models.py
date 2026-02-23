@@ -21,6 +21,7 @@ PKType = Integer if is_sqlite else BigInteger
 # =======================
 class User(Base):
     __tablename__ = "users"
+    __table_args__ = schema_args
 
     user_id = Column(PKType, primary_key=True, autoincrement=True)
     email = Column(Text, nullable=False, unique=True, index=True)
@@ -35,9 +36,10 @@ class User(Base):
 # =======================
 class AccountAWS(Base):
     __tablename__ = "accounts_aws"
+    __table_args__ = schema_args
 
     account_id = Column(PKType, primary_key=True, autoincrement=True)
-    user_id = Column(PKType, ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(PKType, ForeignKey(f"{fk_prefix}users.user_id", ondelete="CASCADE"), nullable=False)
     aws_role_arn = Column(Text, nullable=False)
     external_id = Column(Text, nullable=False)
     updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
