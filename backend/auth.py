@@ -44,6 +44,8 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         email: str = payload.get("sub")
         if email is None:
+        email: str = payload.get("sub")
+        if email is None:
             raise credentials_exception
         token_data = schemas.TokenData(email=email)
     except JWTError:

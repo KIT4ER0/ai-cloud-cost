@@ -1,5 +1,6 @@
-from sqlalchemy import Column, Integer, String, Float, Date, DateTime, ForeignKey, Boolean
+from sqlalchemy import Column, Integer, String, Float, Date, DateTime, ForeignKey, Boolean, Text, BigInteger, Numeric, UniqueConstraint, JSON
 from sqlalchemy.orm import relationship
+from sqlalchemy.dialects.postgresql import JSONB
 try:
     from .database import Base
 except ImportError:
@@ -9,6 +10,7 @@ from datetime import datetime
 
 class User(Base):
     __tablename__ = "users"
+    __table_args__ = schema_args
 
     user_id = Column(BigInteger, primary_key=True, autoincrement=True)
     email = Column(Text, unique=True, nullable=False, index=True)
@@ -17,14 +19,54 @@ class User(Base):
     aws_external_id = Column(Text, unique=True)
 
 
-class Service(Base):
-    __tablename__ = "services"
+    aws_accounts = relationship("AccountAWS", back_populates="user", cascade="all, delete-orphan")
 
-    id = Column(Integer, primary_key=True, index=True)
-    name = Column(String, unique=True, index=True) # e.g., EC2, S3, RDS, Lambda
-    category = Column(String) # Compute, Storage, Database, etc.
 
-    daily_costs = relationship("DailyCost", back_populates="service")
+# =======================
+# Accounts-AWS
+# =======================
+class AccountAWS(Base):
+    __tablename__ = "accounts_aws"
+    __table_args__ = schema_args
+
+    account_id = Column(PKType, primary_key=True, autoincrement=True)
+    user_id = Column(PKType, ForeignKey(f"{fk_prefix}users.user_id", ondelete="CASCADE"), nullable=False)
+    aws_role_arn = Column(Text, nullable=False)
+    external_id = Column(Text, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    user = relationship("User", back_populates="aws_accounts")
+
+# =======================
+# 1) EC2
+# =======================
+class EC2Resource(Base):
+    __tablename__ = "ec2_resources"
+    __table_args__ = (
+        UniqueConstraint('account_id', 'region', 'instance_id', name='uq_ec2_resources_unique'),
+        schema_args
+    )
+
+    ec2_resource_id = Column(PKType, primary_key=True, autoincrement=True)
+    account_id = Column(String(12), nullable=False)
+    region = Column(Text, nullable=False)
+    instance_id = Column(Text, nullable=False)
+    instance_type = Column(Text)
+    state = Column(Text)
+
+    metrics = relationship("EC2Metric", back_populates="resource", cascade="all, delete-orphan")
+    costs = relationship("EC2Cost", back_populates="resource", cascade="all, delete-orphan")
+
+class EC2Metric(Base):
+    __tablename__ = "ec2_metrics"
+    __table_args__ = schema_args
+
+    ec2_resource_id = Column(PKType, ForeignKey(f"{fk_prefix}ec2_resources.ec2_resource_id", ondelete="CASCADE"), primary_key=True)
+    metric_date = Column(Date, primary_key=True, index=True)
+    cpu_p95 = Column(Float)
+    network_out_gb_sum = Column(Float)
+
+    resource = relationship("EC2Resource", back_populates="metrics")
 
 
 class DailyCost(Base):
@@ -266,11 +308,19 @@ class S3Cost(Base):
 # =======================
 class Recommendation(Base):
     __tablename__ = "recommendations"
+    __table_args__ = (
+        UniqueConstraint('rec_date', 'account_id', 'region', 'service', 'resource_key', 'rec_type', name='uq_recommendations_unique'),
+        schema_args
+    )
 
-    id = Column(Integer, primary_key=True, index=True)
-    title = Column(String)
-    description = Column(String)
-    impact = Column(String) # e.g. "Save $50/month"
-    category = Column(String) # e.g. "Cost", "Performance"
-    priority_score = Column(Integer) # 1-5
-    status = Column(String, default="Active") # Active, Dismissed
+    rec_id = Column(PKType, primary_key=True, autoincrement=True)
+    rec_date = Column(Date, nullable=False, index=True)
+    account_id = Column(String(12), nullable=False)
+    region = Column(Text, nullable=False)
+    service = Column(Text, nullable=False, index=True)
+    resource_key = Column(Text, nullable=False)
+    rec_type = Column(Text, nullable=False)
+    details = Column(JSONType, nullable=False, default={})
+    est_saving_usd = Column(Numeric(14, 6))
+    confidence = Column(Float)
+    status = Column(Text, nullable=False, default='open', index=True)

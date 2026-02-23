@@ -6,7 +6,8 @@ import {
     BarChart3,
     LineChart,
     Activity,
-    Lightbulb
+    Lightbulb,
+    LogOut
 } from "lucide-react"
 
 interface SidebarProps {
@@ -49,6 +50,23 @@ export function Sidebar({ className }: SidebarProps) {
                             </Button>
                         ))}
                     </div>
+                </div>
+                <div className="px-3 py-2 mt-auto">
+                    <Button
+                        variant="ghost"
+                        className="w-full justify-start text-red-500 hover:text-red-600 hover:bg-red-50"
+                        onClick={() => {
+                            // Import useAuthStore dynamically or at top level if hook rules allow
+                            // effectively we need to trigger logout and navigation.
+                            // Since this is a component inside Router, we can use useNavigate.
+                            // However, Sidebar might be used in MainLayout.
+                            // Let's assume we can navigate.
+                            window.location.href = '/signin';
+                        }}
+                    >
+                        <LogOut className="mr-2 h-4 w-4" />
+                        Sign Out
+                    </Button>
                 </div>
             </div>
         </div>
