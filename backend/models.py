@@ -6,27 +6,26 @@ except ImportError:
     from database import Base
 from datetime import datetime
 
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
+
 class User(Base):
     __tablename__ = "users"
 
     id = Column(Integer, primary_key=True, index=True)
     username = Column(String, unique=True, index=True)
     hashed_password = Column(String)
-=======
+
 # =======================
 # Authentication (Updated User model)
 # =======================
 class User(Base):
     __tablename__ = "users"
-=======
+
 # =======================
 # Authentication (Updated User model)
 # =======================
 class User(Base):
     __tablename__ = "users"
->>>>>>> Stashed changes
+
     # users table resides in public schema (default)
     
     user_id = Column(BigInteger, primary_key=True, autoincrement=True)
@@ -35,10 +34,7 @@ class User(Base):
     display_name = Column(Text)
     role = Column(Text, nullable=False, default='user')
     is_active = Column(Boolean, nullable=False, default=True)
-<<<<<<< Updated upstream
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
+
 
 class Service(Base):
     __tablename__ = "services"
@@ -49,7 +45,7 @@ class Service(Base):
 
     daily_costs = relationship("DailyCost", back_populates="service")
 
-<<<<<<< Updated upstream
+
 class DailyCost(Base):
     __tablename__ = "daily_costs"
 
@@ -57,7 +53,7 @@ class DailyCost(Base):
     date = Column(Date, index=True)
     cost = Column(Float)
     service_id = Column(Integer, ForeignKey("services.id"))
-=======
+
 class EC2Metric(Base):
     __tablename__ = "ec2_metrics"
     __table_args__ = (
@@ -65,8 +61,8 @@ class EC2Metric(Base):
         {"schema": "cloudcost"}
     )
 
-<<<<<<< Updated upstream
-=======
+
+
     ec2_resource_id = Column(BigInteger, primary_key=True, autoincrement=True)
     account_id = Column(String(12), nullable=False)
     region = Column(Text, nullable=False)
@@ -84,17 +80,17 @@ class EC2Metric(Base):
         {"schema": "cloudcost"}
     )
 
->>>>>>> Stashed changes
+
     ec2_metric_id = Column(BigInteger, primary_key=True, autoincrement=True)
     ec2_resource_id = Column(BigInteger, ForeignKey("cloudcost.ec2_resources.ec2_resource_id", ondelete="CASCADE"), nullable=False)
     metric_date = Column(Date, nullable=False, index=True)
     cpu_p95 = Column(Float)
     network_out_gb_sum = Column(Float)
->>>>>>> Stashed changes
+
 
     service = relationship("Service", back_populates="daily_costs")
 
-<<<<<<< Updated upstream
+
 class MonitoringMetric(Base):
     __tablename__ = "monitoring_metrics"
 
@@ -111,7 +107,6 @@ class MonitoringMetric(Base):
     zone = Column(String)
     ip_address = Column(String)
 
-=======
 class EC2Cost(Base):
     __tablename__ = "ec2_costs"
     __table_args__ = (
@@ -288,7 +283,6 @@ class S3Cost(Base):
 # =======================
 # Recommendations
 # =======================
->>>>>>> Stashed changes
 class Recommendation(Base):
     __tablename__ = "recommendations"
 
