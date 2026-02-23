@@ -10,32 +10,13 @@ from datetime import datetime
 
 class User(Base):
     __tablename__ = "users"
-    __table_args__ = schema_args
+    __table_args__ = {"schema": "cloudcost"}
 
     user_id = Column(BigInteger, primary_key=True, autoincrement=True)
     email = Column(Text, unique=True, nullable=False, index=True)
     password_hash = Column(Text, nullable=False)
     aws_role_arn = Column(Text)
     aws_external_id = Column(Text, unique=True)
-
-
-    aws_accounts = relationship("AccountAWS", back_populates="user", cascade="all, delete-orphan")
-
-
-# =======================
-# Accounts-AWS
-# =======================
-class AccountAWS(Base):
-    __tablename__ = "accounts_aws"
-    __table_args__ = schema_args
-
-    account_id = Column(PKType, primary_key=True, autoincrement=True)
-    user_id = Column(PKType, ForeignKey(f"{fk_prefix}users.user_id", ondelete="CASCADE"), nullable=False)
-    aws_role_arn = Column(Text, nullable=False)
-    external_id = Column(Text, nullable=False)
-    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
-
-    user = relationship("User", back_populates="aws_accounts")
 
 # =======================
 # 1) EC2
@@ -44,47 +25,8 @@ class EC2Resource(Base):
     __tablename__ = "ec2_resources"
     __table_args__ = (
         UniqueConstraint('account_id', 'region', 'instance_id', name='uq_ec2_resources_unique'),
-        schema_args
-    )
-
-    ec2_resource_id = Column(PKType, primary_key=True, autoincrement=True)
-    account_id = Column(String(12), nullable=False)
-    region = Column(Text, nullable=False)
-    instance_id = Column(Text, nullable=False)
-    instance_type = Column(Text)
-    state = Column(Text)
-
-    metrics = relationship("EC2Metric", back_populates="resource", cascade="all, delete-orphan")
-    costs = relationship("EC2Cost", back_populates="resource", cascade="all, delete-orphan")
-
-class EC2Metric(Base):
-    __tablename__ = "ec2_metrics"
-    __table_args__ = schema_args
-
-    ec2_resource_id = Column(PKType, ForeignKey(f"{fk_prefix}ec2_resources.ec2_resource_id", ondelete="CASCADE"), primary_key=True)
-    metric_date = Column(Date, primary_key=True, index=True)
-    cpu_p95 = Column(Float)
-    network_out_gb_sum = Column(Float)
-
-    resource = relationship("EC2Resource", back_populates="metrics")
-
-
-class DailyCost(Base):
-    __tablename__ = "daily_costs"
-
-    id = Column(Integer, primary_key=True, index=True)
-    date = Column(Date, index=True)
-    cost = Column(Float)
-    service_id = Column(Integer, ForeignKey("services.id"))
-
-class EC2Metric(Base):
-    __tablename__ = "ec2_metrics"
-    __table_args__ = (
-        UniqueConstraint('ec2_resource_id', 'metric_date', name='uq_ec2_metrics_unique'),
         {"schema": "cloudcost"}
     )
-
-
 
     ec2_resource_id = Column(BigInteger, primary_key=True, autoincrement=True)
     account_id = Column(String(12), nullable=False)
@@ -103,32 +45,13 @@ class EC2Metric(Base):
         {"schema": "cloudcost"}
     )
 
-
     ec2_metric_id = Column(BigInteger, primary_key=True, autoincrement=True)
     ec2_resource_id = Column(BigInteger, ForeignKey("cloudcost.ec2_resources.ec2_resource_id", ondelete="CASCADE"), nullable=False)
     metric_date = Column(Date, nullable=False, index=True)
     cpu_p95 = Column(Float)
     network_out_gb_sum = Column(Float)
 
-
-    service = relationship("Service", back_populates="daily_costs")
-
-
-class MonitoringMetric(Base):
-    __tablename__ = "monitoring_metrics"
-
-    id = Column(Integer, primary_key=True, index=True)
-    timestamp = Column(DateTime, default=datetime.utcnow, index=True)
-    instance_id = Column(String, index=True)
-    instance_name = Column(String)
-    service_type = Column(String) # EC2, RDS, etc.
-    cpu_usage = Column(Float)
-    memory_usage = Column(Float)
-    disk_io = Column(Float)
-    network_io = Column(Float)
-    status = Column(String) # running, stopped, etc.
-    zone = Column(String)
-    ip_address = Column(String)
+    resource = relationship("EC2Resource", back_populates="metrics")
 
 class EC2Cost(Base):
     __tablename__ = "ec2_costs"
@@ -310,17 +233,17 @@ class Recommendation(Base):
     __tablename__ = "recommendations"
     __table_args__ = (
         UniqueConstraint('rec_date', 'account_id', 'region', 'service', 'resource_key', 'rec_type', name='uq_recommendations_unique'),
-        schema_args
+        {"schema": "cloudcost"}
     )
 
-    rec_id = Column(PKType, primary_key=True, autoincrement=True)
+    rec_id = Column(BigInteger, primary_key=True, autoincrement=True)
     rec_date = Column(Date, nullable=False, index=True)
     account_id = Column(String(12), nullable=False)
     region = Column(Text, nullable=False)
     service = Column(Text, nullable=False, index=True)
     resource_key = Column(Text, nullable=False)
     rec_type = Column(Text, nullable=False)
-    details = Column(JSONType, nullable=False, default={})
+    details = Column(JSONB, nullable=False, default={})
     est_saving_usd = Column(Numeric(14, 6))
     confidence = Column(Float)
     status = Column(Text, nullable=False, default='open', index=True)
