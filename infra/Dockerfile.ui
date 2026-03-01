@@ -1,29 +1,17 @@
-# FROM python:3.11-slim
-
-# WORKDIR /app
-# COPY ../requirements.txt /app/
-# RUN pip install --no-cache-dir -r requirements.txt
-
-# COPY ../ui /app/ui
-# EXPOSE 8501
-# CMD ["streamlit", "run", "ui/App.py", "--server.port=8501", "--server.address=0.0.0.0"]
-
-# infra/Dockerfile.ui
-FROM python:3.11-slim
-
-ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=1
+# infra/Dockerfile.ui  –  Vite + React dev server
+FROM node:20-alpine
 
 WORKDIR /app
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    libgomp1 \
-    && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt /app/requirements.txt
-RUN pip install --no-cache-dir -r /app/requirements.txt
+# 1) Copy package manifests first for better layer caching
+COPY frontend/package.json frontend/pnpm-lock.yaml ./
 
-COPY frontend/ /app/frontend/
+# 2) Install pnpm and dependencies
+RUN corepack enable && corepack prepare pnpm@latest --activate \
+    && pnpm install --frozen-lockfile
 
-EXPOSE 8501
-CMD ["streamlit", "run", "frontend/Home.py", "--server.port=8501", "--server.address=0.0.0.0", "--server.headless=true"]
+# 3) Copy frontend source
+COPY frontend/ ./
+
+EXPOSE 5173
+CMD ["pnpm", "dev", "--host", "0.0.0.0", "--port", "5173"]

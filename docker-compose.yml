@@ -9,7 +9,7 @@ services:
       POSTGRES_USER: ai_user
       POSTGRES_PASSWORD: ai_password
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - dbdata:/var/lib/postgresql/data
     healthcheck:
@@ -55,18 +55,16 @@ services:
       dockerfile: infra/Dockerfile.ui
     container_name: ai_cost_ui
     ports:
-      - "8503:8501"
+      - "5173:5173"
     environment:
-      - API_URL=http://api:8000
-      - DATABASE_URL=postgresql+psycopg2://ai_user:ai_password@db:5432/ai_cost
+      - VITE_API_URL=http://localhost:8000
     depends_on:
-      db:
-        condition: service_healthy
       api:
         condition: service_started
     volumes:
-      - ./frontend:/app/frontend # dev: แก้ UI สดได้
+      - ./frontend:/app # dev: แก้ UI สดได้ (Vite HMR)
+      - /app/node_modules # ไม่ให้ host override node_modules
     command: >
-      streamlit run frontend/Home.py --server.port=8501 --server.address=0.0.0.0 --server.headless=true
+      pnpm dev --host 0.0.0.0 --port 5173
 volumes:
   dbdata:
