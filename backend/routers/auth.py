@@ -10,7 +10,15 @@ def register(user: schemas.UserCreate, db: Session = Depends(database.get_db)):
     if db_user:
         raise HTTPException(status_code=400, detail="Email already registered")
     hashed = auth.get_password_hash(user.password)
-    new_user = models.User(email=user.email, password_hash=hashed)
+    
+    import secrets
+    ext_id = secrets.token_urlsafe(24)
+
+    new_user = models.User(
+        email=user.email, 
+        password_hash=hashed,
+        aws_external_id=ext_id
+    )
     db.add(new_user)
     db.commit()
     db.refresh(new_user)

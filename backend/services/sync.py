@@ -67,10 +67,12 @@ def sync_aws_costs(days_back: int = 90):
     we link to a dummy 'AGGREGATED' resource per service/region.
     """
     db = database.SessionLocal()
+    logger.info(f"🚀 Starting AWS Cost Explorer Sync (Days Back: {days_back})...")
     try:
         ce = boto_client("ce")
         end_date = date.today()
         start_date = end_date - timedelta(days=days_back)
+        logger.info(f"📅 Fetching cost data from {start_date} to {end_date}")
         
         # We process in chunks of time if needed, but for simplicity let's do 1 call per granularity
         # Note: CE is expensive if called too often.
@@ -127,7 +129,7 @@ def sync_aws_costs(days_back: int = 90):
                     continue
 
                 # Map Service Name to our Tables
-                if service_name == "Amazon Elastic Compute Cloud - Compute":
+                if service_name in ("Amazon Elastic Compute Cloud - Compute", "EC2 - Other"):
                     target_list = ec2_costs
                     model_res = models.EC2Resource
                     model_cost = models.EC2Cost
@@ -209,12 +211,18 @@ def sync_aws_metrics(hours_back: int = 24):
     account_id = get_account_id()
     region = boto_client("s3").meta.region_name or "us-east-1" # Hack to get region
     
+    
     end_time = datetime.utcnow()
     start_time = end_time - timedelta(hours=hours_back)
     
+    logger.info(f"🚀 Starting AWS CloudWatch Metrics Sync (Hours Back: {hours_back})...")
+    logger.info(f"⏰ Fetching metrics from {start_time} to {end_time} for region: {region}")
+    
     try:
         # --- EC2 ---
+        logger.info("  -> Syncing EC2 Metrics...")
         _sync_ec2_metrics(db, cw, account_id, region, start_time, end_time)
+        logger.info("  ✅ EC2 Metrics Synced!")
         
         # --- S3 (List buckets from env or generic) ---
         # For demo simplicity, skipping listing all buckets unless we call S3 ListBuckets
@@ -268,13 +276,20 @@ def _sync_ec2_metrics(db: Session, cw, account_id, region, start_time, end_time)
             Statistics=['Maximum'] # p95 needs specialized call, use Max for simple demo
         )
         
+        daily_metrics = {}
         for point in resp['Datapoints']:
+            d_key = point['Timestamp'].date()
+            val = point['Maximum']
+            if d_key not in daily_metrics:
+                daily_metrics[d_key] = val
+            else:
+                daily_metrics[d_key] = max(daily_metrics[d_key], val)
+                
+        for d_key, max_val in daily_metrics.items():
             metric_rows.append({
                 "ec2_resource_id": pk,
-                "metric_date": point['Timestamp'].date(),
-                "cpu_p95": point['Maximum'], # approximated
-                # "network_out_gb_sum": ... (would need another call)
+                "metric_date": d_key,
+                "cpu_p95": max_val,
             })
-            
     if metric_rows:
         _bulk_upsert(db, models.EC2Metric, metric_rows, ["ec2_resource_id", "metric_date"])

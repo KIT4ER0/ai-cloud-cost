@@ -37,14 +37,6 @@ const serviceMonitoringConfig = {
     ],
 }
 
-// Resource ID field names per service
-const resourceIdField: Record<ServiceType, string> = {
-    EC2: "ec2_resource_id",
-    Lambda: "lambda_resource_id",
-    S3: "s3_resource_id",
-    RDS: "rds_resource_id",
-}
-
 const services = ["EC2", "Lambda", "S3", "RDS"] as const
 type ServiceType = typeof services[number]
 

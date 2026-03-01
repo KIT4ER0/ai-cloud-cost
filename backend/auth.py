@@ -8,12 +8,12 @@ from sqlalchemy.orm import Session
 try:
     from . import models, database, schemas
 except ImportError:
-    import models, database, schemas
+    from backend import models, database, schemas
 
 # SECRET_KEY should be in env vars in prod
 SECRET_KEY = "supersecretkey"
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
+ACCESS_TOKEN_EXPIRE_MINUTES = 1440
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
@@ -44,8 +44,6 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         email: str = payload.get("sub")
         if email is None:
-        email: str = payload.get("sub")
-        if email is None:
             raise credentials_exception
         token_data = schemas.TokenData(email=email)
     except JWTError:
@@ -54,8 +52,6 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     user = db.query(models.User).filter(models.User.email == token_data.email).first()
     if user is None:
         raise credentials_exception
-    if not user.is_active:
-        raise HTTPException(status_code=400, detail="Inactive user")
     return user
 
 def authenticate_user(db: Session, email: str, password: str):

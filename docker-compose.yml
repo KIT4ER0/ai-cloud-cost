@@ -41,6 +41,8 @@ services:
     environment:
       - PYTHONUNBUFFERED=1
       - DATABASE_URL=postgresql+psycopg2://ai_user:ai_password@db:5432/ai_cost
+    env_file:
+      - ./backend/.env
     depends_on:
       db:
         condition: service_healthy

@@ -21,8 +21,6 @@ async def trigger_cost_sync(
     """
     Trigger AWS Cost Explorer sync in the background.
     """
-    if current_user.role != "admin":
-        raise HTTPException(status_code=403, detail="Admin access required")
         
     background_tasks.add_task(sync_aws_costs, days_back)
     return {"message": "Cost sync started in background", "days_back": days_back}
@@ -36,8 +34,6 @@ async def trigger_metric_sync(
     """
     Trigger AWS CloudWatch Metrics sync in the background.
     """
-    if current_user.role != "admin":
-        raise HTTPException(status_code=403, detail="Admin access required")
         
     background_tasks.add_task(sync_aws_metrics, hours_back)
     return {"message": "Metric sync started in background", "hours_back": hours_back}

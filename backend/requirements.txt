@@ -10,3 +10,5 @@ python-multipart
 boto3
 tenacity
 httpx
+email-validator
+pydantic[email]

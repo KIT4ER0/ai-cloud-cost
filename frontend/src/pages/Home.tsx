@@ -2,11 +2,31 @@ import { Link } from 'react-router-dom'
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { BarChart, Bar, ResponsiveContainer, XAxis, YAxis, Tooltip } from "recharts"
-import { DollarSign, Server, TrendingUp, TrendingDown, ArrowRight } from 'lucide-react'
+import { DollarSign, Server, TrendingUp, TrendingDown, ArrowRight, RefreshCw } from 'lucide-react'
+import { useState } from 'react'
+import { api } from '@/lib/api'
+import { Button } from "@/components/ui/button"
 import { RECOMMENDATIONS } from '@/types/recommendation'
 import { getDashboardSummary } from '@/lib/dashboard-data'
 
 export default function Home() {
+    const [isSyncing, setIsSyncing] = useState(false);
+
+    const handleSync = async () => {
+        setIsSyncing(true);
+        try {
+            await Promise.all([
+                api.sync.costs(),
+                api.sync.metrics()
+            ]);
+            alert('Data sync has started in the background! Please check back in a few minutes after AWS finishes processing.');
+        } catch (error: any) {
+            alert(error.message || 'Failed to sync data');
+        } finally {
+            setIsSyncing(false);
+        }
+    };
+
     // Get real-time data from shared data module
     const dashboard = getDashboardSummary()
 
@@ -27,9 +47,15 @@ export default function Home() {
         <div className="min-h-screen bg-gray-50/50 -m-8 p-8">
             <div className="space-y-8">
                 {/* Header */}
-                <div>
-                    <h2 className="text-3xl font-bold tracking-tight text-primary">Dashboard</h2>
-                    <p className="text-muted-foreground">Overview of your cloud spend and health.</p>
+                <div className="flex items-center justify-between">
+                    <div>
+                        <h2 className="text-3xl font-bold tracking-tight text-primary">Dashboard</h2>
+                        <p className="text-muted-foreground">Overview of your cloud spend and health.</p>
+                    </div>
+                    <Button onClick={handleSync} disabled={isSyncing} className="bg-blue-600 hover:bg-blue-700">
+                        <RefreshCw className={`mr-2 h-4 w-4 ${isSyncing ? 'animate-spin' : ''}`} />
+                        {isSyncing ? 'Syncing...' : 'Sync AWS Data'}
+                    </Button>
                 </div>
 
                 {/* Top Row: 3 Summary Cards */}

@@ -19,8 +19,8 @@ router = APIRouter(
 )
 
 # Third-party (our platform) AWS credentials — set these in .env
-TP_ACCESS_KEY = os.getenv("TP_AWS_ACCESS_KEY_ID")
-TP_SECRET_KEY = os.getenv("TP_AWS_SECRET_ACCESS_KEY")
+TP_ACCESS_KEY = os.getenv("TP_AWS_ACCESS_KEY_ID") or os.getenv("AWS_ACCESS_KEY_ID")
+TP_SECRET_KEY = os.getenv("TP_AWS_SECRET_ACCESS_KEY") or os.getenv("AWS_SECRET_ACCESS_KEY")
 
 
 def _get_sts_client():
@@ -30,7 +30,7 @@ def _get_sts_client():
     if not TP_ACCESS_KEY or not TP_SECRET_KEY:
         raise HTTPException(
             status_code=500,
-            detail="Missing TP credentials in env (TP_AWS_ACCESS_KEY_ID / TP_AWS_SECRET_ACCESS_KEY)"
+            detail="Missing Platform AWS credentials in backend env (either TP_AWS_ACCESS_KEY_ID or AWS_ACCESS_KEY_ID)"
         )
     return boto3.client(
         "sts",
@@ -47,23 +47,16 @@ def generate_external_id(
     db: Session = Depends(database.get_db),
 ):
     """
-    Generate a cryptographically secure external_id and create
-    a placeholder AccountAWS record for the current user.
+    Return the user's permanent aws_external_id from the DB.
     """
-    ext_id = secrets.token_urlsafe(24)
-
-    account = models.AccountAWS(
-        user_id=current_user.user_id,
-        aws_role_arn="",  # placeholder until connect
-        external_id=ext_id,
-    )
-    db.add(account)
-    db.commit()
-    db.refresh(account)
+    if not current_user.aws_external_id:
+        import secrets
+        current_user.aws_external_id = secrets.token_urlsafe(24)
+        db.commit()
 
     return schemas.ExternalIdResponse(
-        external_id=ext_id,
-        account_id=account.account_id,
+        external_id=current_user.aws_external_id,
+        account_id=current_user.user_id,
     )
 
 
@@ -76,23 +69,13 @@ def connect_aws(
     db: Session = Depends(database.get_db),
 ):
     """
-    Accept the user's Role ARN, look up their pending AccountAWS record,
+    Accept the user's Role ARN, look up their external ID,
     then call STS AssumeRole to verify the cross-account trust.
     """
-    # Find the user's pending account (role_arn still empty)
-    account = (
-        db.query(models.AccountAWS)
-        .filter(
-            models.AccountAWS.user_id == current_user.user_id,
-            models.AccountAWS.aws_role_arn == "",
-        )
-        .order_by(models.AccountAWS.account_id.desc())
-        .first()
-    )
-    if not account:
+    if not current_user.aws_external_id:
         raise HTTPException(
             status_code=404,
-            detail="No pending external_id found. Please generate one first.",
+            detail="No external_id found for current user.",
         )
 
     # Call STS AssumeRole
@@ -101,7 +84,7 @@ def connect_aws(
         assume_resp = sts.assume_role(
             RoleArn=req.role_arn,
             RoleSessionName=req.session_name,
-            ExternalId=account.external_id,
+            ExternalId=current_user.aws_external_id,
         )
     except ClientError as e:
         raise HTTPException(status_code=400, detail=e.response["Error"]["Message"])
@@ -116,8 +99,8 @@ def connect_aws(
     )
     identity = assumed_session.client("sts").get_caller_identity()
 
-    # Persist the role ARN
-    account.aws_role_arn = req.role_arn
+    # Persist the role ARN directly to the user
+    current_user.aws_role_arn = req.role_arn
     db.commit()
 
     return schemas.AwsConnectResponse(
@@ -134,10 +117,13 @@ def list_accounts(
     current_user: models.User = Depends(auth.get_current_user),
     db: Session = Depends(database.get_db),
 ):
-    """Return all AWS accounts linked to the current user."""
-    accounts = (
-        db.query(models.AccountAWS)
-        .filter(models.AccountAWS.user_id == current_user.user_id)
-        .all()
-    )
-    return accounts
+    """Return the AWS account linked to the current user, formatted as a list."""
+    if not current_user.aws_role_arn:
+        return []
+        
+    return [{
+        "account_id": current_user.user_id,
+        "user_id": current_user.user_id,
+        "aws_role_arn": current_user.aws_role_arn,
+        "external_id": current_user.aws_external_id,
+    }]
