@@ -1,24 +1,21 @@
 -- =========================
 -- Schema: cloudcost
--- Services: EC2, Lambda, RDS, S3
--- metrics & costs have their own IDs (PK)
--- No aws_accounts/aws_regions tables
--- No created_at/updated_at
--- No user_id in any table
+-- Services: EC2, Lambda, RDS, S3, ALB
+-- Auth: Supabase Auth (auth.users)
 -- =========================
 
 CREATE SCHEMA IF NOT EXISTS cloudcost;
 SET search_path TO cloudcost;
 
 -- =========================
--- Users
+-- User Profiles
 -- =========================
-CREATE TABLE IF NOT EXISTS users (
-  user_id        BIGSERIAL PRIMARY KEY,
-  email          TEXT NOT NULL UNIQUE,
-  password_hash  TEXT NOT NULL,
-  aws_role_arn   TEXT,
-  aws_external_id TEXT UNIQUE
+CREATE TABLE IF NOT EXISTS user_profiles (
+  profile_id          BIGSERIAL PRIMARY KEY,
+  supabase_user_id    TEXT NOT NULL UNIQUE,
+  email               TEXT,
+  aws_role_arn        TEXT,
+  aws_external_id     TEXT UNIQUE
 );
 
 -- =========================
@@ -119,7 +116,13 @@ CREATE TABLE IF NOT EXISTS rds_metrics (
   metric_date           DATE NOT NULL,
   cpu_utilization       float,
   database_connections  float,
+  freeable_memory       float,
   free_storage_space    float,
+  disk_queue_depth      float,
+  ebs_byte_balance_pct  float,
+  ebs_io_balance_pct    float,
+  cpu_credit_balance    float,
+  cpu_credit_usage      float,
   UNIQUE (rds_resource_id, metric_date)
 );
 

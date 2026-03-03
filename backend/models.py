@@ -8,12 +8,13 @@ except ImportError:
 from datetime import datetime
 
 
-class User(Base):
-    __tablename__ = "users"
+class UserProfile(Base):
+    __tablename__ = "user_profiles"
+    __table_args__ = {"schema": "cloudcost"}
 
-    user_id = Column(BigInteger, primary_key=True, autoincrement=True)
-    email = Column(Text, unique=True, nullable=False, index=True)
-    password_hash = Column(Text, nullable=False)
+    profile_id = Column(BigInteger, primary_key=True, autoincrement=True)
+    supabase_user_id = Column(Text, unique=True, nullable=False, index=True)
+    email = Column(Text, index=True)
     aws_role_arn = Column(Text)
     aws_external_id = Column(Text, unique=True)
 
@@ -24,6 +25,7 @@ class EC2Resource(Base):
     __tablename__ = "ec2_resources"
     __table_args__ = (
         UniqueConstraint('account_id', 'region', 'instance_id', name='uq_ec2_resources_unique'),
+        {"schema": "cloudcost"}
     )
 
     ec2_resource_id = Column(BigInteger, primary_key=True, autoincrement=True)
@@ -40,10 +42,11 @@ class EC2Metric(Base):
     __tablename__ = "ec2_metrics"
     __table_args__ = (
         UniqueConstraint('ec2_resource_id', 'metric_date', name='uq_ec2_metrics_unique'),
+        {"schema": "cloudcost"}
     )
 
     ec2_metric_id = Column(BigInteger, primary_key=True, autoincrement=True)
-    ec2_resource_id = Column(BigInteger, ForeignKey("ec2_resources.ec2_resource_id", ondelete="CASCADE"), nullable=False)
+    ec2_resource_id = Column(BigInteger, ForeignKey("cloudcost.ec2_resources.ec2_resource_id", ondelete="CASCADE"), nullable=False)
     metric_date = Column(Date, nullable=False, index=True)
     cpu_utilization = Column(Float)
     network_in = Column(Float)
@@ -56,10 +59,11 @@ class EC2Cost(Base):
     __tablename__ = "ec2_costs"
     __table_args__ = (
         UniqueConstraint('ec2_resource_id', 'usage_date', 'usage_type', name='uq_ec2_costs_unique'),
+        {"schema": "cloudcost"}
     )
 
     ec2_cost_id = Column(BigInteger, primary_key=True, autoincrement=True)
-    ec2_resource_id = Column(BigInteger, ForeignKey("ec2_resources.ec2_resource_id", ondelete="CASCADE"), nullable=False)
+    ec2_resource_id = Column(BigInteger, ForeignKey("cloudcost.ec2_resources.ec2_resource_id", ondelete="CASCADE"), nullable=False)
     usage_date = Column(Date, nullable=False, index=True)
     usage_type = Column(Text, nullable=False, default='total')
     amount_usd = Column(Numeric(14, 6), nullable=False, default=0)
@@ -74,6 +78,7 @@ class LambdaResource(Base):
     __tablename__ = "lambda_resources"
     __table_args__ = (
         UniqueConstraint('account_id', 'region', 'function_name', name='uq_lambda_resources_unique'),
+        {"schema": "cloudcost"}
     )
 
     lambda_resource_id = Column(BigInteger, primary_key=True, autoincrement=True)
@@ -92,10 +97,11 @@ class LambdaMetric(Base):
     __tablename__ = "lambda_metrics"
     __table_args__ = (
         UniqueConstraint('lambda_resource_id', 'metric_date', name='uq_lambda_metrics_unique'),
+        {"schema": "cloudcost"}
     )
 
     lambda_metric_id = Column(BigInteger, primary_key=True, autoincrement=True)
-    lambda_resource_id = Column(BigInteger, ForeignKey("lambda_resources.lambda_resource_id", ondelete="CASCADE"), nullable=False)
+    lambda_resource_id = Column(BigInteger, ForeignKey("cloudcost.lambda_resources.lambda_resource_id", ondelete="CASCADE"), nullable=False)
     metric_date = Column(Date, nullable=False, index=True)
     duration_p95 = Column(Float)
     invocations = Column(Float)
@@ -107,10 +113,11 @@ class LambdaCost(Base):
     __tablename__ = "lambda_costs"
     __table_args__ = (
         UniqueConstraint('lambda_resource_id', 'usage_date', 'usage_type', name='uq_lambda_costs_unique'),
+        {"schema": "cloudcost"}
     )
 
     lambda_cost_id = Column(BigInteger, primary_key=True, autoincrement=True)
-    lambda_resource_id = Column(BigInteger, ForeignKey("lambda_resources.lambda_resource_id", ondelete="CASCADE"), nullable=False)
+    lambda_resource_id = Column(BigInteger, ForeignKey("cloudcost.lambda_resources.lambda_resource_id", ondelete="CASCADE"), nullable=False)
     usage_date = Column(Date, nullable=False, index=True)
     usage_type = Column(Text, nullable=False, default='total')
     amount_usd = Column(Numeric(14, 6), nullable=False, default=0)
@@ -125,6 +132,7 @@ class RDSResource(Base):
     __tablename__ = "rds_resources"
     __table_args__ = (
         UniqueConstraint('account_id', 'region', 'db_identifier', name='uq_rds_resources_unique'),
+        {"schema": "cloudcost"}
     )
 
     rds_resource_id = Column(BigInteger, primary_key=True, autoincrement=True)
@@ -143,14 +151,21 @@ class RDSMetric(Base):
     __tablename__ = "rds_metrics"
     __table_args__ = (
         UniqueConstraint('rds_resource_id', 'metric_date', name='uq_rds_metrics_unique'),
+        {"schema": "cloudcost"}
     )
 
     rds_metric_id = Column(BigInteger, primary_key=True, autoincrement=True)
-    rds_resource_id = Column(BigInteger, ForeignKey("rds_resources.rds_resource_id", ondelete="CASCADE"), nullable=False)
+    rds_resource_id = Column(BigInteger, ForeignKey("cloudcost.rds_resources.rds_resource_id", ondelete="CASCADE"), nullable=False)
     metric_date = Column(Date, nullable=False, index=True)
     cpu_utilization = Column(Float)
     database_connections = Column(Float)
+    freeable_memory = Column(Float)
     free_storage_space = Column(Float)
+    disk_queue_depth = Column(Float)
+    ebs_byte_balance_pct = Column(Float)
+    ebs_io_balance_pct = Column(Float)
+    cpu_credit_balance = Column(Float)
+    cpu_credit_usage = Column(Float)
 
     resource = relationship("RDSResource", back_populates="metrics")
 
@@ -158,10 +173,11 @@ class RDSCost(Base):
     __tablename__ = "rds_costs"
     __table_args__ = (
         UniqueConstraint('rds_resource_id', 'usage_date', 'usage_type', name='uq_rds_costs_unique'),
+        {"schema": "cloudcost"}
     )
 
     rds_cost_id = Column(BigInteger, primary_key=True, autoincrement=True)
-    rds_resource_id = Column(BigInteger, ForeignKey("rds_resources.rds_resource_id", ondelete="CASCADE"), nullable=False)
+    rds_resource_id = Column(BigInteger, ForeignKey("cloudcost.rds_resources.rds_resource_id", ondelete="CASCADE"), nullable=False)
     usage_date = Column(Date, nullable=False, index=True)
     usage_type = Column(Text, nullable=False, default='total')
     amount_usd = Column(Numeric(14, 6), nullable=False, default=0)
@@ -176,6 +192,7 @@ class S3Resource(Base):
     __tablename__ = "s3_resources"
     __table_args__ = (
         UniqueConstraint('account_id', 'region', 'bucket_name', name='uq_s3_resources_unique'),
+        {"schema": "cloudcost"}
     )
 
     s3_resource_id = Column(BigInteger, primary_key=True, autoincrement=True)
@@ -190,10 +207,11 @@ class S3Metric(Base):
     __tablename__ = "s3_metrics"
     __table_args__ = (
         UniqueConstraint('s3_resource_id', 'metric_date', name='uq_s3_metrics_unique'),
+        {"schema": "cloudcost"}
     )
 
     s3_metric_id = Column(BigInteger, primary_key=True, autoincrement=True)
-    s3_resource_id = Column(BigInteger, ForeignKey("s3_resources.s3_resource_id", ondelete="CASCADE"), nullable=False)
+    s3_resource_id = Column(BigInteger, ForeignKey("cloudcost.s3_resources.s3_resource_id", ondelete="CASCADE"), nullable=False)
     metric_date = Column(Date, nullable=False, index=True)
     bucket_size_bytes = Column(Float)
     number_of_objects = Column(Float)
@@ -204,10 +222,11 @@ class S3Cost(Base):
     __tablename__ = "s3_costs"
     __table_args__ = (
         UniqueConstraint('s3_resource_id', 'usage_date', 'usage_type', name='uq_s3_costs_unique'),
+        {"schema": "cloudcost"}
     )
 
     s3_cost_id = Column(BigInteger, primary_key=True, autoincrement=True)
-    s3_resource_id = Column(BigInteger, ForeignKey("s3_resources.s3_resource_id", ondelete="CASCADE"), nullable=False)
+    s3_resource_id = Column(BigInteger, ForeignKey("cloudcost.s3_resources.s3_resource_id", ondelete="CASCADE"), nullable=False)
     usage_date = Column(Date, nullable=False, index=True)
     usage_type = Column(Text, nullable=False, default='total')
     amount_usd = Column(Numeric(14, 6), nullable=False, default=0)
@@ -222,6 +241,7 @@ class ALBResource(Base):
     __tablename__ = "alb_resources"
     __table_args__ = (
         UniqueConstraint('account_id', 'region', 'lb_name', name='uq_alb_resources_unique'),
+        {"schema": "cloudcost"}
     )
 
     alb_resource_id = Column(BigInteger, primary_key=True, autoincrement=True)
@@ -239,10 +259,11 @@ class ALBMetric(Base):
     __tablename__ = "alb_metrics"
     __table_args__ = (
         UniqueConstraint('alb_resource_id', 'metric_date', name='uq_alb_metrics_unique'),
+        {"schema": "cloudcost"}
     )
 
     alb_metric_id = Column(BigInteger, primary_key=True, autoincrement=True)
-    alb_resource_id = Column(BigInteger, ForeignKey("alb_resources.alb_resource_id", ondelete="CASCADE"), nullable=False)
+    alb_resource_id = Column(BigInteger, ForeignKey("cloudcost.alb_resources.alb_resource_id", ondelete="CASCADE"), nullable=False)
     metric_date = Column(Date, nullable=False, index=True)
     request_count = Column(Float)
     response_time_avg = Column(Float)
@@ -255,10 +276,11 @@ class ALBCost(Base):
     __tablename__ = "alb_costs"
     __table_args__ = (
         UniqueConstraint('alb_resource_id', 'usage_date', 'usage_type', name='uq_alb_costs_unique'),
+        {"schema": "cloudcost"}
     )
 
     alb_cost_id = Column(BigInteger, primary_key=True, autoincrement=True)
-    alb_resource_id = Column(BigInteger, ForeignKey("alb_resources.alb_resource_id", ondelete="CASCADE"), nullable=False)
+    alb_resource_id = Column(BigInteger, ForeignKey("cloudcost.alb_resources.alb_resource_id", ondelete="CASCADE"), nullable=False)
     usage_date = Column(Date, nullable=False, index=True)
     usage_type = Column(Text, nullable=False, default='total')
     amount_usd = Column(Numeric(14, 6), nullable=False, default=0)
@@ -273,6 +295,7 @@ class Recommendation(Base):
     __tablename__ = "recommendations"
     __table_args__ = (
         UniqueConstraint('rec_date', 'account_id', 'region', 'service', 'resource_key', 'rec_type', name='uq_recommendations_unique'),
+        {"schema": "cloudcost"}
     )
 
     rec_id = Column(BigInteger, primary_key=True, autoincrement=True)

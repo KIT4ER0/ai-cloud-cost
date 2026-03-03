@@ -101,9 +101,15 @@ EC2_STRATEGIES: Dict[str, str] = {
 }
 
 RDS_STRATEGIES: Dict[str, str] = {
-    "cpu": "max",
-    "db_conn": "max",
-    "free_storage": "min",
+    "rds_cpu": "max",
+    "rds_conn": "max",
+    "rds_mem_free": "min",
+    "rds_storage_free": "min",
+    "rds_disk_q": "max",
+    "rds_ebs_byte_bal": "min",
+    "rds_ebs_io_bal": "min",
+    "rds_cpu_credit_bal": "min",
+    "rds_cpu_credit_use": "sum",
 }
 
 LAMBDA_STRATEGIES: Dict[str, str] = {

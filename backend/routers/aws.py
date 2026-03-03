@@ -18,19 +18,17 @@ router = APIRouter(
 
 @router.post("/generate-external-id", response_model=schemas.ExternalIdResponse)
 def generate_external_id(
-    current_user: models.User = Depends(auth.get_current_user),
+    current_user: models.UserProfile = Depends(auth.get_current_user),
     db: Session = Depends(database.get_db),
 ):
-    """
-    Return the user's permanent aws_external_id from the DB.
-    """
+    """Return the user's permanent aws_external_id from the DB."""
     if not current_user.aws_external_id:
         current_user.aws_external_id = secrets.token_urlsafe(24)
         db.commit()
 
     return schemas.ExternalIdResponse(
         external_id=current_user.aws_external_id,
-        account_id=current_user.user_id,
+        account_id=current_user.profile_id,
     )
 
 
@@ -39,7 +37,7 @@ def generate_external_id(
 @router.post("/connect", response_model=schemas.AwsConnectResponse)
 def connect_aws(
     req: schemas.AwsConnectRequest,
-    current_user: models.User = Depends(auth.get_current_user),
+    current_user: models.UserProfile = Depends(auth.get_current_user),
     db: Session = Depends(database.get_db),
 ):
     """
@@ -63,7 +61,7 @@ def connect_aws(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-    # Persist the role ARN directly to the user
+    # Persist the role ARN directly to the user profile
     current_user.aws_role_arn = req.role_arn
     db.commit()
 
@@ -78,17 +76,16 @@ def connect_aws(
 
 @router.get("/accounts", response_model=list[schemas.AwsAccountOut])
 def list_accounts(
-    current_user: models.User = Depends(auth.get_current_user),
+    current_user: models.UserProfile = Depends(auth.get_current_user),
     db: Session = Depends(database.get_db),
 ):
     """Return the AWS account linked to the current user, formatted as a list."""
     if not current_user.aws_role_arn:
         return []
-        
+
     return [{
-        "account_id": current_user.user_id,
-        "user_id": current_user.user_id,
+        "account_id": current_user.profile_id,
+        "user_id": current_user.profile_id,
         "aws_role_arn": current_user.aws_role_arn,
         "external_id": current_user.aws_external_id,
     }]
-

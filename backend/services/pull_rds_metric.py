@@ -29,9 +29,20 @@ def build_rds_metric_queries_hourly(db_identifier: str):
         }
 
     return [
-        q("cpu", "CPUUtilization", "Average"),
-        q("db_conn", "DatabaseConnections", "Average"),
-        q("free_storage", "FreeStorageSpace", "Minimum"),
+        # ===== Core =====
+        q("rds_cpu", "CPUUtilization", "Average"),
+        q("rds_conn", "DatabaseConnections", "Average"),
+        q("rds_mem_free", "FreeableMemory", "Average"),
+        q("rds_storage_free", "FreeStorageSpace", "Average"),
+
+        # ===== I/O / Storage burst =====
+        q("rds_disk_q", "DiskQueueDepth", "Average"),
+        q("rds_ebs_byte_bal", "EBSByteBalancePercent", "Average"),
+        q("rds_ebs_io_bal", "EBSIOBalancePercent", "Average"),
+
+        # ===== Burstable (t3/t4g) =====
+        q("rds_cpu_credit_bal", "CPUCreditBalance", "Average"),
+        q("rds_cpu_credit_use", "CPUCreditUsage", "Sum"),
     ]
 
 
@@ -151,9 +162,15 @@ def save_rds_metrics(pull_results: dict, account_id: str, region: str):
                 metric_rows.append({
                     "rds_resource_id": resource.rds_resource_id,
                     "metric_date": metric_date,
-                    "cpu_utilization": values.get("cpu"),
-                    "database_connections": values.get("db_conn"),
-                    "free_storage_space": values.get("free_storage"),
+                    "cpu_utilization": values.get("rds_cpu"),
+                    "database_connections": values.get("rds_conn"),
+                    "freeable_memory": values.get("rds_mem_free"),
+                    "free_storage_space": values.get("rds_storage_free"),
+                    "disk_queue_depth": values.get("rds_disk_q"),
+                    "ebs_byte_balance_pct": values.get("rds_ebs_byte_bal"),
+                    "ebs_io_balance_pct": values.get("rds_ebs_io_bal"),
+                    "cpu_credit_balance": values.get("rds_cpu_credit_bal"),
+                    "cpu_credit_usage": values.get("rds_cpu_credit_use"),
                 })
 
             if metric_rows:
@@ -163,7 +180,13 @@ def save_rds_metrics(pull_results: dict, account_id: str, region: str):
                     set_={
                         "cpu_utilization": stmt.excluded.cpu_utilization,
                         "database_connections": stmt.excluded.database_connections,
+                        "freeable_memory": stmt.excluded.freeable_memory,
                         "free_storage_space": stmt.excluded.free_storage_space,
+                        "disk_queue_depth": stmt.excluded.disk_queue_depth,
+                        "ebs_byte_balance_pct": stmt.excluded.ebs_byte_balance_pct,
+                        "ebs_io_balance_pct": stmt.excluded.ebs_io_balance_pct,
+                        "cpu_credit_balance": stmt.excluded.cpu_credit_balance,
+                        "cpu_credit_usage": stmt.excluded.cpu_credit_usage,
                     }
                 )
                 db.execute(stmt)

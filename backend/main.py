@@ -3,9 +3,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from . import database, models
 from .routers import auth, costs, monitoring, recommendations, system, aws, sync
 
-import os
+from sqlalchemy import text
 
-# Create DB tables
+# Create schema and DB tables
+with database.engine.begin() as conn:
+    conn.execute(text("CREATE SCHEMA IF NOT EXISTS cloudcost;"))
 models.Base.metadata.create_all(bind=database.engine)
 
 app = FastAPI(title="AI Cloud Cost Optimizer Backend")

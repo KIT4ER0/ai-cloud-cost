@@ -7,10 +7,7 @@ import boto3
 from .. import schemas, database, models
 from ..auth import get_current_user
 from ..services.sync import sync_aws_costs, sync_aws_metrics
-from ..services.pull_data_metric import (
-    list_ec2_instances,
-    pull_ec2_metrics,
-)
+from ..services.pull_ec2_metric import list_ec2_instances, pull_ec2_metrics
 
 router = APIRouter(
     prefix="/sync",
@@ -22,12 +19,9 @@ router = APIRouter(
 async def trigger_cost_sync(
     background_tasks: BackgroundTasks,
     days_back: int = 90,
-    current_user: models.User = Depends(get_current_user)
+    current_user: models.UserProfile = Depends(get_current_user)
 ):
-    """
-    Trigger AWS Cost Explorer sync in the background.
-    """
-        
+    """Trigger AWS Cost Explorer sync in the background."""
     background_tasks.add_task(sync_aws_costs, days_back)
     return {"message": "Cost sync started in background", "days_back": days_back}
 
@@ -35,12 +29,9 @@ async def trigger_cost_sync(
 async def trigger_metric_sync(
     background_tasks: BackgroundTasks,
     hours_back: int = 24,
-    current_user: models.User = Depends(get_current_user)
+    current_user: models.UserProfile = Depends(get_current_user)
 ):
-    """
-    Trigger AWS CloudWatch Metrics sync in the background.
-    """
-        
+    """Trigger AWS CloudWatch Metrics sync in the background."""
     background_tasks.add_task(sync_aws_metrics, hours_back)
     return {"message": "Metric sync started in background", "hours_back": hours_back}
 
@@ -51,7 +42,7 @@ async def trigger_metric_sync(
 def test_pull_ec2_metrics(
     region: str = "us-east-1",
     days_back: int = 7,
-    current_user: models.User = Depends(get_current_user),
+    current_user: models.UserProfile = Depends(get_current_user),
 ):
     """
     List EC2 instances and pull CloudWatch metrics
@@ -71,7 +62,7 @@ def test_pull_ec2_metrics(
     try:
         session = get_assumed_session(
             role_arn=current_user.aws_role_arn,
-            session_name=f"metric-pull-{current_user.user_id}",
+            session_name=f"metric-pull-{current_user.profile_id}",
             external_id=current_user.aws_external_id,
         )
     except (RuntimeError, ValueError) as e:
@@ -121,4 +112,3 @@ def test_pull_ec2_metrics(
         "instances": instances,
         "metrics": formatted,
     }
-

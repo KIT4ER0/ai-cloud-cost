@@ -5,29 +5,15 @@ from datetime import datetime, date
 # =======================
 # Authentication / User
 # =======================
-class UserCreate(BaseModel):
-    email: EmailStr
-    password: str
-
-class UserLogin(BaseModel):
-    email: EmailStr
-    password: str
-
-class UserResponse(BaseModel):
-    user_id: int
-    email: EmailStr
+class UserProfileResponse(BaseModel):
+    profile_id: int
+    supabase_user_id: str
+    email: Optional[str] = None
     aws_role_arn: Optional[str] = None
     aws_external_id: Optional[str] = None
 
     class Config:
         from_attributes = True
-
-class Token(BaseModel):
-    access_token: str
-    token_type: str
-
-class TokenData(BaseModel):
-    email: Optional[str] = None
 
 # =======================
 # Dashboard / Summary
@@ -135,7 +121,13 @@ class RDSMetricOut(BaseModel):
     metric_date: str
     cpu_utilization: Optional[float] = None
     database_connections: Optional[float] = None
+    freeable_memory: Optional[float] = None
     free_storage_space: Optional[float] = None
+    disk_queue_depth: Optional[float] = None
+    ebs_byte_balance_pct: Optional[float] = None
+    ebs_io_balance_pct: Optional[float] = None
+    cpu_credit_balance: Optional[float] = None
+    cpu_credit_usage: Optional[float] = None
     class Config:
         from_attributes = True
 
