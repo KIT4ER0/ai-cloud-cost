@@ -8,7 +8,7 @@ from sqlalchemy import text
 
 # App imports
 from .. import models, database
-from .aws import boto_client, get_account_id
+from .aws_sts import boto_client, get_account_id
 
 logger = logging.getLogger(__name__)
 
