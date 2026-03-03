@@ -3,6 +3,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from . import database, models
 from .routers import auth, costs, monitoring, recommendations, system, aws, sync
 
+import os
+
 # Create DB tables
 models.Base.metadata.create_all(bind=database.engine)
 

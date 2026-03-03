@@ -289,7 +289,7 @@ def _sync_ec2_metrics(db: Session, cw, account_id, region, start_time, end_time)
             metric_rows.append({
                 "ec2_resource_id": pk,
                 "metric_date": d_key,
-                "cpu_p95": max_val,
+                "cpu_utilization": max_val,
             })
     if metric_rows:
         _bulk_upsert(db, models.EC2Metric, metric_rows, ["ec2_resource_id", "metric_date"])

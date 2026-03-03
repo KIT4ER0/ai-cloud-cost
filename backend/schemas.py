@@ -74,72 +74,72 @@ class CostAnalysisData(BaseModel):
     drivers: Dict[str, List[CostDriverItem]]
 
 # =======================
-# Resources & Metrics (Base Helpers)
+# Resources & Metrics
 # =======================
-class MetricData(BaseModel):
-    timestamp: datetime
-    cpu_usage: float
-    network_in: float
-    network_out: float
-    disk_io: float
 
+# --- EC2 ---
 class EC2ResourceOut(BaseModel):
     ec2_resource_id: int
     account_id: str
     region: str
     instance_id: str
-    instance_type: Optional[str]
-    state: Optional[str]
+    instance_type: Optional[str] = None
+    state: Optional[str] = None
     class Config:
         from_attributes = True
 
 class EC2MetricOut(BaseModel):
     metric_date: str
-    cpu_p95: Optional[float]
-    network_out_gb_sum: Optional[float]
+    cpu_utilization: Optional[float] = None
+    network_in: Optional[float] = None
+    network_out: Optional[float] = None
+    cpu_credit_usage: Optional[float] = None
     class Config:
         from_attributes = True
 
+# --- Lambda ---
 class LambdaResourceOut(BaseModel):
     lambda_resource_id: int
     account_id: str
     region: str
     function_name: str
-    function_arn: Optional[str]
-    runtime: Optional[str]
-    memory_mb: Optional[int]
-    timeout_sec: Optional[int]
+    function_arn: Optional[str] = None
+    runtime: Optional[str] = None
+    memory_mb: Optional[int] = None
+    timeout_sec: Optional[int] = None
     class Config:
         from_attributes = True
 
 class LambdaMetricOut(BaseModel):
     metric_date: str
-    duration_p95_ms: Optional[float]
-    invocations_sum: Optional[float]
-    errors_sum: Optional[float]
+    duration_p95: Optional[float] = None
+    invocations: Optional[float] = None
+    errors: Optional[float] = None
     class Config:
         from_attributes = True
 
+# --- RDS ---
 class RDSResourceOut(BaseModel):
     rds_resource_id: int
     account_id: str
     region: str
     db_identifier: str
-    engine: Optional[str]
-    instance_class: Optional[str]
-    storage_type: Optional[str]
-    allocated_gb: Optional[int]
+    engine: Optional[str] = None
+    instance_class: Optional[str] = None
+    storage_type: Optional[str] = None
+    allocated_gb: Optional[int] = None
     class Config:
         from_attributes = True
 
 class RDSMetricOut(BaseModel):
     metric_date: str
-    cpu_p95: Optional[float]
-    db_conn_avg: Optional[float]
-    free_storage_gb_min: Optional[float]
+    cpu_utilization: Optional[float] = None
+    database_connections: Optional[float] = None
+    free_storage_space: Optional[float] = None
     class Config:
         from_attributes = True
 
+# --- S3 ---
 class S3ResourceOut(BaseModel):
     s3_resource_id: int
     account_id: str
@@ -150,11 +150,35 @@ class S3ResourceOut(BaseModel):
 
 class S3MetricOut(BaseModel):
     metric_date: str
-    storage_gb_avg: Optional[float]
-    number_of_objects: Optional[float]
+    bucket_size_bytes: Optional[float] = None
+    number_of_objects: Optional[float] = None
     class Config:
         from_attributes = True
 
+# --- ALB ---
+class ALBResourceOut(BaseModel):
+    alb_resource_id: int
+    account_id: str
+    region: str
+    lb_name: str
+    lb_arn: Optional[str] = None
+    dns_name: Optional[str] = None
+    scheme: Optional[str] = None
+    class Config:
+        from_attributes = True
+
+class ALBMetricOut(BaseModel):
+    metric_date: str
+    request_count: Optional[float] = None
+    response_time_avg: Optional[float] = None
+    http_5xx_count: Optional[float] = None
+    active_conn_count: Optional[float] = None
+    class Config:
+        from_attributes = True
+
+# =======================
+# Recommendations
+# =======================
 class RecommendationItem(BaseModel):
     rec_id: int
     rec_date: date
@@ -164,13 +188,16 @@ class RecommendationItem(BaseModel):
     resource_key: str
     rec_type: str
     details: Dict[str, Any]
-    est_saving_usd: Optional[float]
-    confidence: Optional[float]
+    est_saving_usd: Optional[float] = None
+    confidence: Optional[float] = None
     status: str
 
     class Config:
         from_attributes = True
 
+# =======================
+# AWS Connection
+# =======================
 class ExternalIdResponse(BaseModel):
     external_id: str
     account_id: int
@@ -189,6 +216,6 @@ class AwsAccountOut(BaseModel):
     user_id: int
     aws_role_arn: str
     external_id: str
-    
+
     class Config:
         from_attributes = True

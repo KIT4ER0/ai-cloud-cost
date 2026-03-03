@@ -38,8 +38,10 @@ CREATE TABLE IF NOT EXISTS ec2_metrics (
   ec2_metric_id       BIGSERIAL PRIMARY KEY,
   ec2_resource_id     BIGINT NOT NULL REFERENCES ec2_resources(ec2_resource_id) ON DELETE CASCADE,
   metric_date         DATE NOT NULL,
-  cpu_p95             DOUBLE PRECISION,
-  network_out_gb_sum  DOUBLE PRECISION,
+  cpu_utilization     float,
+  network_in          float,
+  network_out         float,
+  cpu_credit_usage    float,
   UNIQUE (ec2_resource_id, metric_date)
 );
 
@@ -76,9 +78,9 @@ CREATE TABLE IF NOT EXISTS lambda_metrics (
   lambda_metric_id       BIGSERIAL PRIMARY KEY,
   lambda_resource_id     BIGINT NOT NULL REFERENCES lambda_resources(lambda_resource_id) ON DELETE CASCADE,
   metric_date            DATE NOT NULL,
-  duration_p95_ms        DOUBLE PRECISION,
-  invocations_sum        DOUBLE PRECISION,
-  errors_sum             DOUBLE PRECISION,
+  duration_p95           float,
+  invocations            float,
+  errors                 float,
   UNIQUE (lambda_resource_id, metric_date)
 );
 
@@ -115,9 +117,9 @@ CREATE TABLE IF NOT EXISTS rds_metrics (
   rds_metric_id         BIGSERIAL PRIMARY KEY,
   rds_resource_id       BIGINT NOT NULL REFERENCES rds_resources(rds_resource_id) ON DELETE CASCADE,
   metric_date           DATE NOT NULL,
-  cpu_p95               DOUBLE PRECISION,
-  db_conn_avg           DOUBLE PRECISION,
-  free_storage_gb_min   DOUBLE PRECISION,
+  cpu_utilization       float,
+  database_connections  float,
+  free_storage_space    float,
   UNIQUE (rds_resource_id, metric_date)
 );
 
@@ -150,8 +152,8 @@ CREATE TABLE IF NOT EXISTS s3_metrics (
   s3_metric_id        BIGSERIAL PRIMARY KEY,
   s3_resource_id      BIGINT NOT NULL REFERENCES s3_resources(s3_resource_id) ON DELETE CASCADE,
   metric_date         DATE NOT NULL,
-  storage_gb_avg      DOUBLE PRECISION,
-  number_of_objects   DOUBLE PRECISION,
+  bucket_size_bytes   float,
+  number_of_objects   float,
   UNIQUE (s3_resource_id, metric_date)
 );
 
@@ -170,6 +172,45 @@ CREATE INDEX IF NOT EXISTS idx_s3_metrics_date          ON s3_metrics(metric_dat
 CREATE INDEX IF NOT EXISTS idx_s3_costs_date            ON s3_costs(usage_date);
 
 -- =========================
+-- 5) ALB (Application Load Balancer)
+-- =========================
+CREATE TABLE IF NOT EXISTS alb_resources (
+  alb_resource_id BIGSERIAL PRIMARY KEY,
+  account_id      VARCHAR(12) NOT NULL,
+  region          TEXT NOT NULL,
+  lb_name         TEXT NOT NULL,
+  lb_arn          TEXT,
+  dns_name        TEXT,
+  scheme          TEXT,
+  UNIQUE (account_id, region, lb_name)
+);
+
+CREATE TABLE IF NOT EXISTS alb_metrics (
+  alb_metric_id         BIGSERIAL PRIMARY KEY,
+  alb_resource_id       BIGINT NOT NULL REFERENCES alb_resources(alb_resource_id) ON DELETE CASCADE,
+  metric_date           DATE NOT NULL,
+  request_count         float,
+  response_time_avg     float,
+  http_5xx_count        float,
+  active_conn_count     float,
+  UNIQUE (alb_resource_id, metric_date)
+);
+
+CREATE TABLE IF NOT EXISTS alb_costs (
+  alb_cost_id      BIGSERIAL PRIMARY KEY,
+  alb_resource_id  BIGINT NOT NULL REFERENCES alb_resources(alb_resource_id) ON DELETE CASCADE,
+  usage_date       DATE NOT NULL,
+  usage_type       TEXT NOT NULL DEFAULT 'total',
+  amount_usd       NUMERIC(14,6) NOT NULL DEFAULT 0,
+  currency_src     TEXT NOT NULL DEFAULT 'USD',
+  UNIQUE (alb_resource_id, usage_date, usage_type)
+);
+
+CREATE INDEX IF NOT EXISTS idx_alb_resources_acct_region ON alb_resources(account_id, region);
+CREATE INDEX IF NOT EXISTS idx_alb_metrics_date          ON alb_metrics(metric_date);
+CREATE INDEX IF NOT EXISTS idx_alb_costs_date            ON alb_costs(usage_date);
+
+-- =========================
 -- Recommendations (Generic)
 -- =========================
 CREATE TABLE IF NOT EXISTS recommendations (
@@ -177,8 +218,8 @@ CREATE TABLE IF NOT EXISTS recommendations (
   rec_date        DATE NOT NULL,
   account_id      VARCHAR(12) NOT NULL,
   region          TEXT NOT NULL,
-  service         TEXT NOT NULL,         -- EC2/Lambda/RDS/S3/DataTransfer
-  resource_key    TEXT NOT NULL,         -- instance_id / function_name / db_identifier / bucket_name / etc.
+  service         TEXT NOT NULL,         -- EC2/Lambda/RDS/S3/ALB/DataTransfer
+  resource_key    TEXT NOT NULL,         -- instance_id / function_name / db_identifier / bucket_name / lb_name
   rec_type        TEXT NOT NULL,         -- เช่น EC2_RIGHTSIZE_P95_LOW
   details         JSONB NOT NULL DEFAULT '{}'::jsonb,
   est_saving_usd  NUMERIC(14,6),
