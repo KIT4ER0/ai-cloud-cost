@@ -7,7 +7,7 @@ import boto3
 from .. import schemas, database, models
 from ..auth import get_current_user
 from ..services.sync import sync_aws_costs, sync_aws_metrics
-from ..services.pull_ec2_metric import list_ec2_instances, pull_ec2_metrics
+from ..services.metrics_ec2 import list_ec2_instances, pull_ec2_metrics
 
 router = APIRouter(
     prefix="/sync",
@@ -41,7 +41,7 @@ async def trigger_metric_sync(
 @router.get("/ec2-metrics")
 def test_pull_ec2_metrics(
     region: str = "us-east-1",
-    days_back: int = 7,
+    days_back: int = 30,
     current_user: models.UserProfile = Depends(get_current_user),
 ):
     """

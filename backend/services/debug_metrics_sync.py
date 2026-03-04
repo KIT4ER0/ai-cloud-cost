@@ -1,6 +1,6 @@
 """
 Test script: Pull EC2 + RDS metrics from CloudWatch, aggregate hourly→daily, save to DB.
-Run inside Docker:  docker compose exec api python -m backend.services.test_pull_and_save
+Run inside Docker:  docker compose exec api python -m backend.services.debug_metrics_sync
 
 Reads aws_role_arn + aws_external_id from cloudcost.users table,
 then uses AssumeRole to get a session with proper permissions.
@@ -76,7 +76,7 @@ def get_account_id(session: boto3.Session) -> str:
 
 def test_ec2(session: boto3.Session, account_id: str, region: str):
     """Test: Pull EC2 metrics → aggregate → save."""
-    from backend.services.pull_ec2_metric import pull_ec2_metrics, save_ec2_metrics
+    from backend.services.metrics_ec2 import pull_ec2_metrics, save_ec2_metrics
     from backend.services.cloudwatch_utils import print_all_datapoints
 
     logger.info("=" * 60)
@@ -87,7 +87,7 @@ def test_ec2(session: boto3.Session, account_id: str, region: str):
         results = pull_ec2_metrics(
             customer_session=session,
             region=region,
-            days_back=7,
+            days_back=30,
             timezone_offset_hours=7,
         )
     except Exception as e:
@@ -109,7 +109,7 @@ def test_ec2(session: boto3.Session, account_id: str, region: str):
 
 def test_rds(session: boto3.Session, account_id: str, region: str):
     """Test: Pull RDS metrics → aggregate → save."""
-    from backend.services.pull_rds_metric import pull_rds_metrics, save_rds_metrics
+    from backend.services.metrics_rds import pull_rds_metrics, save_rds_metrics
     from backend.services.cloudwatch_utils import print_all_datapoints
 
     logger.info("=" * 60)
@@ -120,7 +120,7 @@ def test_rds(session: boto3.Session, account_id: str, region: str):
         results = pull_rds_metrics(
             customer_session=session,
             region=region,
-            days_back=7,
+            days_back=30,
             timezone_offset_hours=7,
         )
     except Exception as e:

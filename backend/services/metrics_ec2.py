@@ -9,7 +9,6 @@ logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
 
-
 def build_ec2_metric_queries_hourly(instance_id: str):
     dims = [{"Name": "InstanceId", "Value": instance_id}]
 
