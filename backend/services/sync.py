@@ -20,6 +20,7 @@ def _upsert_resource(db: Session, model_cls, unique_filters: Dict, defaults: Dic
     """
     Get existing resource ID or create new one.
     Returns the primary key ID.
+    Note: unique_filters should include profile_id.
     """
     obj = db.query(model_cls).filter_by(**unique_filters).first()
     if obj:
@@ -60,7 +61,7 @@ def _bulk_upsert(db: Session, model_cls, rows: List[Dict], index_elements: List[
 # 1. AWS Cost Explorer Sync
 # ==============================================================================
 
-def sync_aws_costs(days_back: int = 90):
+def sync_aws_costs(profile_id: int, days_back: int = 90):
     """
     Fetch daily costs (Grouped by SERVICE, USAGE_TYPE) and upsert to DB.
     Since CE doesn't give Resource IDs for daily granularity easily, 
@@ -157,6 +158,7 @@ def sync_aws_costs(days_back: int = 90):
                 if cache_key not in resource_cache:
                     # Upsert "AGGREGATED" resource
                     filters = {
+                        "profile_id": profile_id,
                         "account_id": account_id,
                         "region": default_region,
                         res_key_field: "AGGREGATED"
@@ -201,7 +203,7 @@ def sync_aws_costs(days_back: int = 90):
 # 2. AWS CloudWatch Metrics Sync
 # ==============================================================================
 
-def sync_aws_metrics(hours_back: int = 24):
+def sync_aws_metrics(profile_id: int, hours_back: int = 24):
     """
     Fetch CloudWatch metrics for EC2, RDS, S3, Lambda.
     Upserts real Resource records and then Metrics.
@@ -221,7 +223,7 @@ def sync_aws_metrics(hours_back: int = 24):
     try:
         # --- EC2 ---
         logger.info("  -> Syncing EC2 Metrics...")
-        _sync_ec2_metrics(db, cw, account_id, region, start_time, end_time)
+        _sync_ec2_metrics(db, cw, account_id, region, start_time, end_time, profile_id)
         logger.info("  ✅ EC2 Metrics Synced!")
         
         # --- S3 (List buckets from env or generic) ---
@@ -240,7 +242,7 @@ def sync_aws_metrics(hours_back: int = 24):
     finally:
         db.close()
 
-def _sync_ec2_metrics(db: Session, cw, account_id, region, start_time, end_time):
+def _sync_ec2_metrics(db: Session, cw, account_id, region, start_time, end_time, profile_id: int):
     # 1. List Instances (Real world: use EC2 DescribeInstances)
     ec2_client = boto_client("ec2")
     instances = []
@@ -261,7 +263,7 @@ def _sync_ec2_metrics(db: Session, cw, account_id, region, start_time, end_time)
         pk = _upsert_resource(
             db, 
             models.EC2Resource, 
-            {"account_id": account_id, "region": region, "instance_id": inst['id']},
+            {"profile_id": profile_id, "account_id": account_id, "region": region, "instance_id": inst['id']},
             {"instance_type": inst['type'], "state": inst['state']}
         )
         

@@ -113,7 +113,7 @@ def pull_s3_metrics(
 
 # ─── Save S3 Metrics to DB ────────────────────────────────────────
 
-def save_s3_metrics(pull_results: dict, account_id: str, region: str):
+def save_s3_metrics(pull_results: dict, account_id: str, region: str, profile_id: int):
     """
     Save pulled S3 metrics to the database.
     Upserts resources and bulk-upserts metric rows.
@@ -134,6 +134,7 @@ def save_s3_metrics(pull_results: dict, account_id: str, region: str):
 
             if not resource:
                 resource = models.S3Resource(
+                    profile_id=profile_id,
                     account_id=account_id,
                     region=region,
                     bucket_name=bname,

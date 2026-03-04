@@ -13,8 +13,13 @@ router = APIRouter(
 # ---- EC2 ----
 
 @router.get("/ec2", response_model=List[schemas.EC2ResourceOut])
-def get_ec2_resources(db: Session = Depends(database.get_db)):
-    return db.query(models.EC2Resource).all()
+def get_ec2_resources(
+    current_user: models.UserProfile = Depends(auth.get_current_user),
+    db: Session = Depends(database.get_db),
+):
+    return db.query(models.EC2Resource).filter(
+        models.EC2Resource.profile_id == current_user.profile_id
+    ).all()
 
 @router.get("/ec2/{resource_id}/metrics", response_model=List[schemas.EC2MetricOut])
 def get_ec2_metrics(resource_id: int, db: Session = Depends(database.get_db)):
@@ -34,8 +39,13 @@ def get_ec2_metrics(resource_id: int, db: Session = Depends(database.get_db)):
 # ---- Lambda ----
 
 @router.get("/lambda", response_model=List[schemas.LambdaResourceOut])
-def get_lambda_resources(db: Session = Depends(database.get_db)):
-    return db.query(models.LambdaResource).all()
+def get_lambda_resources(
+    current_user: models.UserProfile = Depends(auth.get_current_user),
+    db: Session = Depends(database.get_db),
+):
+    return db.query(models.LambdaResource).filter(
+        models.LambdaResource.profile_id == current_user.profile_id
+    ).all()
 
 @router.get("/lambda/{resource_id}/metrics", response_model=List[schemas.LambdaMetricOut])
 def get_lambda_metrics(resource_id: int, db: Session = Depends(database.get_db)):
@@ -54,8 +64,13 @@ def get_lambda_metrics(resource_id: int, db: Session = Depends(database.get_db))
 # ---- RDS ----
 
 @router.get("/rds", response_model=List[schemas.RDSResourceOut])
-def get_rds_resources(db: Session = Depends(database.get_db)):
-    return db.query(models.RDSResource).all()
+def get_rds_resources(
+    current_user: models.UserProfile = Depends(auth.get_current_user),
+    db: Session = Depends(database.get_db),
+):
+    return db.query(models.RDSResource).filter(
+        models.RDSResource.profile_id == current_user.profile_id
+    ).all()
 
 @router.get("/rds/{resource_id}/metrics", response_model=List[schemas.RDSMetricOut])
 def get_rds_metrics(resource_id: int, db: Session = Depends(database.get_db)):
@@ -80,8 +95,13 @@ def get_rds_metrics(resource_id: int, db: Session = Depends(database.get_db)):
 # ---- S3 ----
 
 @router.get("/s3", response_model=List[schemas.S3ResourceOut])
-def get_s3_resources(db: Session = Depends(database.get_db)):
-    return db.query(models.S3Resource).all()
+def get_s3_resources(
+    current_user: models.UserProfile = Depends(auth.get_current_user),
+    db: Session = Depends(database.get_db),
+):
+    return db.query(models.S3Resource).filter(
+        models.S3Resource.profile_id == current_user.profile_id
+    ).all()
 
 @router.get("/s3/{resource_id}/metrics", response_model=List[schemas.S3MetricOut])
 def get_s3_metrics(resource_id: int, db: Session = Depends(database.get_db)):
@@ -99,8 +119,13 @@ def get_s3_metrics(resource_id: int, db: Session = Depends(database.get_db)):
 # ---- ALB ----
 
 @router.get("/alb", response_model=List[schemas.ALBResourceOut])
-def get_alb_resources(db: Session = Depends(database.get_db)):
-    return db.query(models.ALBResource).all()
+def get_alb_resources(
+    current_user: models.UserProfile = Depends(auth.get_current_user),
+    db: Session = Depends(database.get_db),
+):
+    return db.query(models.ALBResource).filter(
+        models.ALBResource.profile_id == current_user.profile_id
+    ).all()
 
 @router.get("/alb/{resource_id}/metrics", response_model=List[schemas.ALBMetricOut])
 def get_alb_metrics(resource_id: int, db: Session = Depends(database.get_db)):

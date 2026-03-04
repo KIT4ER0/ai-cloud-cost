@@ -111,7 +111,7 @@ def pull_rds_metrics(
 
 # ─── Save RDS Metrics to DB ───────────────────────────────────────
 
-def save_rds_metrics(pull_results: dict, account_id: str, region: str):
+def save_rds_metrics(pull_results: dict, account_id: str, region: str, profile_id: int):
     """
     Save pulled RDS metrics to the database.
     Upserts resources and bulk-upserts metric rows.
@@ -132,6 +132,7 @@ def save_rds_metrics(pull_results: dict, account_id: str, region: str):
 
             if not resource:
                 resource = models.RDSResource(
+                    profile_id=profile_id,
                     account_id=account_id,
                     region=region,
                     db_identifier=db_id,

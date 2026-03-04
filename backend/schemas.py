@@ -66,6 +66,7 @@ class CostAnalysisData(BaseModel):
 # --- EC2 ---
 class EC2ResourceOut(BaseModel):
     ec2_resource_id: int
+    profile_id: int
     account_id: str
     region: str
     instance_id: str
@@ -86,6 +87,7 @@ class EC2MetricOut(BaseModel):
 # --- Lambda ---
 class LambdaResourceOut(BaseModel):
     lambda_resource_id: int
+    profile_id: int
     account_id: str
     region: str
     function_name: str
@@ -107,6 +109,7 @@ class LambdaMetricOut(BaseModel):
 # --- RDS ---
 class RDSResourceOut(BaseModel):
     rds_resource_id: int
+    profile_id: int
     account_id: str
     region: str
     db_identifier: str
@@ -134,6 +137,7 @@ class RDSMetricOut(BaseModel):
 # --- S3 ---
 class S3ResourceOut(BaseModel):
     s3_resource_id: int
+    profile_id: int
     account_id: str
     region: str
     bucket_name: str
@@ -150,6 +154,7 @@ class S3MetricOut(BaseModel):
 # --- ALB ---
 class ALBResourceOut(BaseModel):
     alb_resource_id: int
+    profile_id: int
     account_id: str
     region: str
     lb_name: str
@@ -173,6 +178,7 @@ class ALBMetricOut(BaseModel):
 # =======================
 class RecommendationItem(BaseModel):
     rec_id: int
+    profile_id: int
     rec_date: date
     account_id: str
     region: str

@@ -115,7 +115,7 @@ def pull_alb_metrics(
 
 # ─── Save ALB Metrics to DB ───────────────────────────────────────
 
-def save_alb_metrics(pull_results: dict, account_id: str, region: str):
+def save_alb_metrics(pull_results: dict, account_id: str, region: str, profile_id: int):
     """
     Save pulled ALB metrics to the database.
     Upserts resources and bulk-upserts metric rows.
@@ -136,6 +136,7 @@ def save_alb_metrics(pull_results: dict, account_id: str, region: str):
 
             if not resource:
                 resource = models.ALBResource(
+                    profile_id=profile_id,
                     account_id=account_id,
                     region=region,
                     lb_name=lb_name,

@@ -22,7 +22,7 @@ async def trigger_cost_sync(
     current_user: models.UserProfile = Depends(get_current_user)
 ):
     """Trigger AWS Cost Explorer sync in the background."""
-    background_tasks.add_task(sync_aws_costs, days_back)
+    background_tasks.add_task(sync_aws_costs, current_user.profile_id, days_back)
     return {"message": "Cost sync started in background", "days_back": days_back}
 
 @router.post("/metrics", status_code=status.HTTP_202_ACCEPTED)
@@ -32,7 +32,7 @@ async def trigger_metric_sync(
     current_user: models.UserProfile = Depends(get_current_user)
 ):
     """Trigger AWS CloudWatch Metrics sync in the background."""
-    background_tasks.add_task(sync_aws_metrics, hours_back)
+    background_tasks.add_task(sync_aws_metrics, current_user.profile_id, hours_back)
     return {"message": "Metric sync started in background", "hours_back": hours_back}
 
 

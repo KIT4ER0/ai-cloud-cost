@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS user_profiles (
 -- =========================
 CREATE TABLE IF NOT EXISTS ec2_resources (
   ec2_resource_id BIGSERIAL PRIMARY KEY,
+  profile_id      BIGINT NOT NULL REFERENCES user_profiles(profile_id),
   account_id      VARCHAR(12) NOT NULL,
   region          TEXT NOT NULL,
   instance_id     TEXT NOT NULL,
@@ -53,6 +54,7 @@ CREATE TABLE IF NOT EXISTS ec2_costs (
 );
 
 CREATE INDEX IF NOT EXISTS idx_ec2_resources_acct_region ON ec2_resources(account_id, region);
+CREATE INDEX IF NOT EXISTS idx_ec2_resources_profile     ON ec2_resources(profile_id);
 CREATE INDEX IF NOT EXISTS idx_ec2_metrics_date          ON ec2_metrics(metric_date);
 CREATE INDEX IF NOT EXISTS idx_ec2_costs_date            ON ec2_costs(usage_date);
 
@@ -61,6 +63,7 @@ CREATE INDEX IF NOT EXISTS idx_ec2_costs_date            ON ec2_costs(usage_date
 -- =========================
 CREATE TABLE IF NOT EXISTS lambda_resources (
   lambda_resource_id BIGSERIAL PRIMARY KEY,
+  profile_id         BIGINT NOT NULL REFERENCES user_profiles(profile_id),
   account_id         VARCHAR(12) NOT NULL,
   region             TEXT NOT NULL,
   function_name      TEXT NOT NULL,
@@ -92,6 +95,7 @@ CREATE TABLE IF NOT EXISTS lambda_costs (
 );
 
 CREATE INDEX IF NOT EXISTS idx_lambda_resources_acct_region ON lambda_resources(account_id, region);
+CREATE INDEX IF NOT EXISTS idx_lambda_resources_profile     ON lambda_resources(profile_id);
 CREATE INDEX IF NOT EXISTS idx_lambda_metrics_date          ON lambda_metrics(metric_date);
 CREATE INDEX IF NOT EXISTS idx_lambda_costs_date            ON lambda_costs(usage_date);
 
@@ -100,6 +104,7 @@ CREATE INDEX IF NOT EXISTS idx_lambda_costs_date            ON lambda_costs(usag
 -- =========================
 CREATE TABLE IF NOT EXISTS rds_resources (
   rds_resource_id BIGSERIAL PRIMARY KEY,
+  profile_id      BIGINT NOT NULL REFERENCES user_profiles(profile_id),
   account_id      VARCHAR(12) NOT NULL,
   region          TEXT NOT NULL,
   db_identifier   TEXT NOT NULL,
@@ -137,6 +142,7 @@ CREATE TABLE IF NOT EXISTS rds_costs (
 );
 
 CREATE INDEX IF NOT EXISTS idx_rds_resources_acct_region ON rds_resources(account_id, region);
+CREATE INDEX IF NOT EXISTS idx_rds_resources_profile     ON rds_resources(profile_id);
 CREATE INDEX IF NOT EXISTS idx_rds_metrics_date          ON rds_metrics(metric_date);
 CREATE INDEX IF NOT EXISTS idx_rds_costs_date            ON rds_costs(usage_date);
 
@@ -145,6 +151,7 @@ CREATE INDEX IF NOT EXISTS idx_rds_costs_date            ON rds_costs(usage_date
 -- =========================
 CREATE TABLE IF NOT EXISTS s3_resources (
   s3_resource_id BIGSERIAL PRIMARY KEY,
+  profile_id     BIGINT NOT NULL REFERENCES user_profiles(profile_id),
   account_id     VARCHAR(12) NOT NULL,
   region         TEXT NOT NULL,
   bucket_name    TEXT NOT NULL,
@@ -171,6 +178,7 @@ CREATE TABLE IF NOT EXISTS s3_costs (
 );
 
 CREATE INDEX IF NOT EXISTS idx_s3_resources_acct_region ON s3_resources(account_id, region);
+CREATE INDEX IF NOT EXISTS idx_s3_resources_profile     ON s3_resources(profile_id);
 CREATE INDEX IF NOT EXISTS idx_s3_metrics_date          ON s3_metrics(metric_date);
 CREATE INDEX IF NOT EXISTS idx_s3_costs_date            ON s3_costs(usage_date);
 
@@ -179,6 +187,7 @@ CREATE INDEX IF NOT EXISTS idx_s3_costs_date            ON s3_costs(usage_date);
 -- =========================
 CREATE TABLE IF NOT EXISTS alb_resources (
   alb_resource_id BIGSERIAL PRIMARY KEY,
+  profile_id      BIGINT NOT NULL REFERENCES user_profiles(profile_id),
   account_id      VARCHAR(12) NOT NULL,
   region          TEXT NOT NULL,
   lb_name         TEXT NOT NULL,
@@ -210,6 +219,7 @@ CREATE TABLE IF NOT EXISTS alb_costs (
 );
 
 CREATE INDEX IF NOT EXISTS idx_alb_resources_acct_region ON alb_resources(account_id, region);
+CREATE INDEX IF NOT EXISTS idx_alb_resources_profile     ON alb_resources(profile_id);
 CREATE INDEX IF NOT EXISTS idx_alb_metrics_date          ON alb_metrics(metric_date);
 CREATE INDEX IF NOT EXISTS idx_alb_costs_date            ON alb_costs(usage_date);
 
@@ -218,6 +228,7 @@ CREATE INDEX IF NOT EXISTS idx_alb_costs_date            ON alb_costs(usage_date
 -- =========================
 CREATE TABLE IF NOT EXISTS recommendations (
   rec_id          BIGSERIAL PRIMARY KEY,
+  profile_id      BIGINT NOT NULL REFERENCES user_profiles(profile_id),
   rec_date        DATE NOT NULL,
   account_id      VARCHAR(12) NOT NULL,
   region          TEXT NOT NULL,
@@ -235,3 +246,4 @@ CREATE INDEX IF NOT EXISTS idx_recs_date     ON recommendations(rec_date);
 CREATE INDEX IF NOT EXISTS idx_recs_service  ON recommendations(service);
 CREATE INDEX IF NOT EXISTS idx_recs_status   ON recommendations(status);
 CREATE INDEX IF NOT EXISTS idx_recs_acct_reg ON recommendations(account_id, region);
+CREATE INDEX IF NOT EXISTS idx_recs_profile  ON recommendations(profile_id);

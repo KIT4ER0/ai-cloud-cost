@@ -40,6 +40,7 @@ def seed_data():
         curr = db.query(models.EC2Resource).filter_by(instance_id=inst["id"]).first()
         if not curr:
             curr = models.EC2Resource(
+                profile_id=1,
                 account_id="123456789012",
                 region="us-east-1",
                 instance_id=inst["id"],
@@ -85,6 +86,7 @@ def seed_data():
         curr = db.query(models.S3Resource).filter_by(bucket_name=b).first()
         if not curr:
             curr = models.S3Resource(
+                profile_id=1,
                 account_id="123456789012",
                 region="us-east-1",
                 bucket_name=b
@@ -111,6 +113,7 @@ def seed_data():
     if db.query(models.Recommendation).count() == 0:
         recs = [
             models.Recommendation(
+                profile_id=1,
                 rec_date=datetime.utcnow().date(),
                 account_id="123456789012",
                 region="us-east-1",

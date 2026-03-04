@@ -18,6 +18,14 @@ class UserProfile(Base):
     aws_role_arn = Column(Text)
     aws_external_id = Column(Text, unique=True)
 
+    # Relationships to resources
+    ec2_resources = relationship("EC2Resource", back_populates="profile", cascade="all, delete-orphan")
+    lambda_resources = relationship("LambdaResource", back_populates="profile", cascade="all, delete-orphan")
+    rds_resources = relationship("RDSResource", back_populates="profile", cascade="all, delete-orphan")
+    s3_resources = relationship("S3Resource", back_populates="profile", cascade="all, delete-orphan")
+    alb_resources = relationship("ALBResource", back_populates="profile", cascade="all, delete-orphan")
+    recommendations = relationship("Recommendation", back_populates="profile", cascade="all, delete-orphan")
+
 # =======================
 # 1) EC2
 # =======================
@@ -29,12 +37,14 @@ class EC2Resource(Base):
     )
 
     ec2_resource_id = Column(BigInteger, primary_key=True, autoincrement=True)
+    profile_id = Column(BigInteger, ForeignKey("cloudcost.user_profiles.profile_id"), nullable=False, index=True)
     account_id = Column(String(12), nullable=False)
     region = Column(Text, nullable=False)
     instance_id = Column(Text, nullable=False)
     instance_type = Column(Text)
     state = Column(Text)
 
+    profile = relationship("UserProfile", back_populates="ec2_resources")
     metrics = relationship("EC2Metric", back_populates="resource", cascade="all, delete-orphan")
     costs = relationship("EC2Cost", back_populates="resource", cascade="all, delete-orphan")
 
@@ -82,6 +92,7 @@ class LambdaResource(Base):
     )
 
     lambda_resource_id = Column(BigInteger, primary_key=True, autoincrement=True)
+    profile_id = Column(BigInteger, ForeignKey("cloudcost.user_profiles.profile_id"), nullable=False, index=True)
     account_id = Column(String(12), nullable=False)
     region = Column(Text, nullable=False)
     function_name = Column(Text, nullable=False)
@@ -90,6 +101,7 @@ class LambdaResource(Base):
     memory_mb = Column(Integer)
     timeout_sec = Column(Integer)
 
+    profile = relationship("UserProfile", back_populates="lambda_resources")
     metrics = relationship("LambdaMetric", back_populates="resource", cascade="all, delete-orphan")
     costs = relationship("LambdaCost", back_populates="resource", cascade="all, delete-orphan")
 
@@ -136,6 +148,7 @@ class RDSResource(Base):
     )
 
     rds_resource_id = Column(BigInteger, primary_key=True, autoincrement=True)
+    profile_id = Column(BigInteger, ForeignKey("cloudcost.user_profiles.profile_id"), nullable=False, index=True)
     account_id = Column(String(12), nullable=False)
     region = Column(Text, nullable=False)
     db_identifier = Column(Text, nullable=False)
@@ -144,6 +157,7 @@ class RDSResource(Base):
     storage_type = Column(Text)
     allocated_gb = Column(Integer)
 
+    profile = relationship("UserProfile", back_populates="rds_resources")
     metrics = relationship("RDSMetric", back_populates="resource", cascade="all, delete-orphan")
     costs = relationship("RDSCost", back_populates="resource", cascade="all, delete-orphan")
 
@@ -196,10 +210,12 @@ class S3Resource(Base):
     )
 
     s3_resource_id = Column(BigInteger, primary_key=True, autoincrement=True)
+    profile_id = Column(BigInteger, ForeignKey("cloudcost.user_profiles.profile_id"), nullable=False, index=True)
     account_id = Column(String(12), nullable=False)
     region = Column(Text, nullable=False)
     bucket_name = Column(Text, nullable=False)
 
+    profile = relationship("UserProfile", back_populates="s3_resources")
     metrics = relationship("S3Metric", back_populates="resource", cascade="all, delete-orphan")
     costs = relationship("S3Cost", back_populates="resource", cascade="all, delete-orphan")
 
@@ -245,6 +261,7 @@ class ALBResource(Base):
     )
 
     alb_resource_id = Column(BigInteger, primary_key=True, autoincrement=True)
+    profile_id = Column(BigInteger, ForeignKey("cloudcost.user_profiles.profile_id"), nullable=False, index=True)
     account_id = Column(String(12), nullable=False)
     region = Column(Text, nullable=False)
     lb_name = Column(Text, nullable=False)
@@ -252,6 +269,7 @@ class ALBResource(Base):
     dns_name = Column(Text)
     scheme = Column(Text)
 
+    profile = relationship("UserProfile", back_populates="alb_resources")
     metrics = relationship("ALBMetric", back_populates="resource", cascade="all, delete-orphan")
     costs = relationship("ALBCost", back_populates="resource", cascade="all, delete-orphan")
 
@@ -299,6 +317,7 @@ class Recommendation(Base):
     )
 
     rec_id = Column(BigInteger, primary_key=True, autoincrement=True)
+    profile_id = Column(BigInteger, ForeignKey("cloudcost.user_profiles.profile_id"), nullable=False, index=True)
     rec_date = Column(Date, nullable=False, index=True)
     account_id = Column(String(12), nullable=False)
     region = Column(Text, nullable=False)
@@ -309,3 +328,5 @@ class Recommendation(Base):
     est_saving_usd = Column(Numeric(14, 6))
     confidence = Column(Float)
     status = Column(Text, nullable=False, default='open', index=True)
+
+    profile = relationship("UserProfile", back_populates="recommendations")

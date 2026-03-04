@@ -110,7 +110,7 @@ def pull_ec2_metrics(
 
 # ─── Save EC2 Metrics to DB ───────────────────────────────────────
 
-def save_ec2_metrics(pull_results: dict, account_id: str, region: str):
+def save_ec2_metrics(pull_results: dict, account_id: str, region: str, profile_id: int):
     """
     Save pulled EC2 metrics to the database.
     Upserts resources and bulk-upserts metric rows.
@@ -131,6 +131,7 @@ def save_ec2_metrics(pull_results: dict, account_id: str, region: str):
 
             if not resource:
                 resource = models.EC2Resource(
+                    profile_id=profile_id,
                     account_id=account_id,
                     region=region,
                     instance_id=iid,

@@ -99,7 +99,7 @@ def pull_lambda_metrics(
 
 # ─── Save Lambda Metrics to DB ────────────────────────────────────
 
-def save_lambda_metrics(pull_results: dict, account_id: str, region: str):
+def save_lambda_metrics(pull_results: dict, account_id: str, region: str, profile_id: int):
     """
     Save pulled Lambda metrics to the database.
     Upserts resources and bulk-upserts metric rows.
@@ -120,6 +120,7 @@ def save_lambda_metrics(pull_results: dict, account_id: str, region: str):
 
             if not resource:
                 resource = models.LambdaResource(
+                    profile_id=profile_id,
                     account_id=account_id,
                     region=region,
                     function_name=fname,
