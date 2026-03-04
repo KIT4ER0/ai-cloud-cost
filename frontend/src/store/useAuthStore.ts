@@ -18,10 +18,15 @@ export const useAuthStore = create<AuthState>((set) => ({
     isAuthenticated: false,
     user: null,
     token: localStorage.getItem('token'),
-    initialize: () => {
+    initialize: async () => {
         const token = localStorage.getItem('token');
         if (token) {
-            set({ isAuthenticated: true, token });
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user && user.email) {
+                set({ isAuthenticated: true, user: { email: user.email }, token });
+            } else {
+                set({ isAuthenticated: true, token });
+            }
         }
     },
     login: async (data) => {
@@ -30,9 +35,9 @@ export const useAuthStore = create<AuthState>((set) => ({
                 email: data.email,
                 password: data.password,
             });
-            
+
             if (error) throw error;
-            
+
             const token = authData.session?.access_token;
             if (token) {
                 localStorage.setItem('token', token);

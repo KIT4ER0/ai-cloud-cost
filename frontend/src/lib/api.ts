@@ -17,7 +17,7 @@ const request = {
       try {
         const errData = await res.json();
         if (errData.detail) errStr = typeof errData.detail === "string" ? errData.detail : JSON.stringify(errData.detail);
-      } catch (e) {}
+      } catch (e) { }
       throw new Error(errStr);
     }
     return res.json();
@@ -36,7 +36,7 @@ const request = {
       try {
         const errData = await res.json();
         if (errData.detail) errStr = typeof errData.detail === "string" ? errData.detail : JSON.stringify(errData.detail);
-      } catch (e) {}
+      } catch (e) { }
       throw new Error(errStr);
     }
     return res.json();
@@ -45,6 +45,9 @@ const request = {
 
 export const api = {
   ...request,
+  auth: {
+    me: () => request.get("/me"),
+  },
   aws: {
     generateExternalId: () => request.post("/api/aws/generate-external-id"),
     connect: (data: any) => request.post("/api/aws/connect", data),
