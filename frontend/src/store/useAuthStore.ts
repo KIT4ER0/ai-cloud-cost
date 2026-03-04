@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { api } from '@/lib/api';
+import { supabase } from '@/lib/supabase';
 
 interface User {
     email: string;
@@ -26,18 +26,28 @@ export const useAuthStore = create<AuthState>((set) => ({
     },
     login: async (data) => {
         try {
-            const response = await api.auth.login({ email: data.email, password: data.password });
-            const token = response.access_token;
-            localStorage.setItem('token', token);
-            set({ isAuthenticated: true, user: { email: data.email }, token });
+            const { data: authData, error } = await supabase.auth.signInWithPassword({
+                email: data.email,
+                password: data.password,
+            });
+            
+            if (error) throw error;
+            
+            const token = authData.session?.access_token;
+            if (token) {
+                localStorage.setItem('token', token);
+                set({ isAuthenticated: true, user: { email: data.email }, token });
+            } else {
+                throw new Error("No access token returned");
+            }
         } catch (error) {
             console.error("Login failed:", error);
             throw error;
         }
     },
-    logout: () => {
+    logout: async () => {
+        await supabase.auth.signOut();
         localStorage.removeItem('token');
         set({ isAuthenticated: false, user: null, token: null });
     },
 }));
-

@@ -45,10 +45,6 @@ const request = {
 
 export const api = {
   ...request,
-  auth: {
-    login: (data: any) => request.post("/login", data),
-    register: (data: any) => request.post("/register", data),
-  },
   aws: {
     generateExternalId: () => request.post("/api/aws/generate-external-id"),
     connect: (data: any) => request.post("/api/aws/connect", data),
