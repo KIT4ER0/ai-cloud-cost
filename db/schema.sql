@@ -164,6 +164,10 @@ CREATE TABLE IF NOT EXISTS s3_metrics (
   metric_date         DATE NOT NULL,
   bucket_size_bytes   float,
   number_of_objects   float,
+  get_requests        float,
+  put_requests        float,
+  bytes_downloaded    float,
+  bytes_uploaded      float,
   UNIQUE (s3_resource_id, metric_date)
 );
 
@@ -202,7 +206,7 @@ CREATE TABLE IF NOT EXISTS alb_metrics (
   alb_resource_id       BIGINT NOT NULL REFERENCES alb_resources(alb_resource_id) ON DELETE CASCADE,
   metric_date           DATE NOT NULL,
   request_count         float,
-  response_time_avg     float,
+  response_time_p95     float,
   http_5xx_count        float,
   active_conn_count     float,
   UNIQUE (alb_resource_id, metric_date)

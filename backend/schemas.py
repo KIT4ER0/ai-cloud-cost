@@ -148,6 +148,10 @@ class S3MetricOut(BaseModel):
     metric_date: str
     bucket_size_bytes: Optional[float] = None
     number_of_objects: Optional[float] = None
+    get_requests: Optional[float] = None
+    put_requests: Optional[float] = None
+    bytes_downloaded: Optional[float] = None
+    bytes_uploaded: Optional[float] = None
     class Config:
         from_attributes = True
 
@@ -167,7 +171,7 @@ class ALBResourceOut(BaseModel):
 class ALBMetricOut(BaseModel):
     metric_date: str
     request_count: Optional[float] = None
-    response_time_avg: Optional[float] = None
+    response_time_p95: Optional[float] = None
     http_5xx_count: Optional[float] = None
     active_conn_count: Optional[float] = None
     class Config:

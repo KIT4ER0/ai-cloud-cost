@@ -1,15 +1,32 @@
 import boto3
 import logging
-from datetime import datetime, timedelta, timezone
 from botocore.exceptions import ClientError
 from .cloudwatch_utils import get_cloudwatch_metric_data, print_all_datapoints
-from .aggregate import aggregate_hourly_to_daily, RDS_STRATEGIES
+from .aggregate import aggregate_hourly_to_daily  # ใช้เป็น group-by-date ได้
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
 
-def build_rds_metric_queries_hourly(db_identifier: str):
+# ──────────────────────────────────────────────────────────────
+# ✅ Daily CloudWatch Queries (Period = 86400)
+# ──────────────────────────────────────────────────────────────
+
+def build_rds_metric_queries_daily(db_identifier: str):
+    """
+    Build CloudWatch MetricDataQueries that return DAILY buckets.
+
+    Daily buckets:
+    - CPUUtilization: p95 (true daily p95)
+    - DatabaseConnections: Maximum (peak connections)
+    - FreeableMemory: Minimum (worst case)
+    - FreeStorageSpace: Minimum (worst case)
+    - DiskQueueDepth: Maximum (peak queue)
+    - EBSByteBalancePercent: Minimum (worst burst balance)
+    - EBSIOBalancePercent: Minimum (worst burst balance)
+    - CPUCreditBalance: Minimum (worst case)
+    - CPUCreditUsage: Sum (daily total usage)
+    """
     dims = [{"Name": "DBInstanceIdentifier", "Value": db_identifier}]
 
     def q(_id: str, metric: str, stat: str):
@@ -22,28 +39,42 @@ def build_rds_metric_queries_hourly(db_identifier: str):
                     "MetricName": metric,
                     "Dimensions": dims,
                 },
-                "Period": 3600,
-                "Stat": stat,
+                "Period": 86400,  # ✅ 1 day
+                "Stat": stat,     # ✅ supports extended like 'p95'
             },
             "ReturnData": True,
         }
 
     return [
         # ===== Core =====
-        q("rds_cpu", "CPUUtilization", "p95"),
-        q("rds_conn", "DatabaseConnections", "Average"),
-        q("rds_mem_free", "FreeableMemory", "Average"),
-        q("rds_storage_free", "FreeStorageSpace", "Average"),
+        q("rds_cpu", "CPUUtilization", "p95"),                # ✅ true daily p95
+        q("rds_conn", "DatabaseConnections", "Maximum"),      # ✅ peak
+        q("rds_mem_free", "FreeableMemory", "Minimum"),       # ✅ worst
+        q("rds_storage_free", "FreeStorageSpace", "Minimum"), # ✅ worst
 
         # ===== I/O / Storage burst =====
-        q("rds_disk_q", "DiskQueueDepth", "Average"),
-        q("rds_ebs_byte_bal", "EBSByteBalancePercent", "Average"),
-        q("rds_ebs_io_bal", "EBSIOBalancePercent", "Average"),
+        q("rds_disk_q", "DiskQueueDepth", "Maximum"),              # ✅ peak
+        q("rds_ebs_byte_bal", "EBSByteBalancePercent", "Minimum"), # ✅ worst balance
+        q("rds_ebs_io_bal", "EBSIOBalancePercent", "Minimum"),     # ✅ worst balance
 
         # ===== Burstable (t3/t4g) =====
-        q("rds_cpu_credit_bal", "CPUCreditBalance", "Average"),
-        q("rds_cpu_credit_use", "CPUCreditUsage", "Sum"),
+        q("rds_cpu_credit_bal", "CPUCreditBalance", "Minimum"), # ✅ worst case
+        q("rds_cpu_credit_use", "CPUCreditUsage", "Sum"),        # ✅ daily total
     ]
+
+
+# CloudWatch already returns DAILY buckets -> just pick that day's value
+RDS_DAILY_STRATEGIES = {
+    "rds_cpu": "last",
+    "rds_conn": "last",
+    "rds_mem_free": "last",
+    "rds_storage_free": "last",
+    "rds_disk_q": "last",
+    "rds_ebs_byte_bal": "last",
+    "rds_ebs_io_bal": "last",
+    "rds_cpu_credit_bal": "last",
+    "rds_cpu_credit_use": "last",
+}
 
 
 # ─── RDS Instance Discovery ───────────────────────────────────────
@@ -83,7 +114,7 @@ def pull_rds_metrics(
     timezone_offset_hours: int = 0,
 ) -> dict:
     """
-    End-to-end: list RDS instances → build queries → fetch CloudWatch metrics.
+    End-to-end: list RDS instances → build DAILY queries → fetch CloudWatch metrics.
     """
     instances = list_rds_instances(customer_session, region)
 
@@ -94,7 +125,10 @@ def pull_rds_metrics(
     all_results = {}
     for inst in instances:
         db_id = inst["db_identifier"]
-        queries = build_rds_metric_queries_hourly(db_id)
+
+        # ✅ Use DAILY queries now
+        queries = build_rds_metric_queries_daily(db_id)
+
         metrics = get_cloudwatch_metric_data(
             customer_session=customer_session,
             region=region,
@@ -102,8 +136,9 @@ def pull_rds_metrics(
             days_back=days_back,
             timezone_offset_hours=timezone_offset_hours,
         )
+
         all_results[db_id] = {"instance": inst, "metrics": metrics}
-        logger.info(f"Fetched metrics for {db_id} ({inst['engine']})")
+        logger.info(f"Fetched DAILY metrics for {db_id} ({inst['engine']})")
 
     logger.info(f"Completed metric pull for {len(all_results)} RDS instances")
     return all_results
@@ -115,6 +150,11 @@ def save_rds_metrics(pull_results: dict, account_id: str, region: str, profile_i
     """
     Save pulled RDS metrics to the database.
     Upserts resources and bulk-upserts metric rows.
+
+    NOTE:
+    - CloudWatch now returns DAILY buckets already (Period=86400)
+    - We still use aggregate_hourly_to_daily() as a simple "group-by-date"
+      and set strategies to "last" to pick the daily value.
     """
     from .. import models, database
     from sqlalchemy.dialects.postgresql import insert
@@ -154,8 +194,8 @@ def save_rds_metrics(pull_results: dict, account_id: str, region: str, profile_i
             if not cw_resp:
                 continue
 
-            # 2) Aggregate hourly → daily
-            daily = aggregate_hourly_to_daily(cw_resp, RDS_STRATEGIES)
+            # 2) Group DAILY results by date (CloudWatch already daily)
+            daily = aggregate_hourly_to_daily(cw_resp, RDS_DAILY_STRATEGIES)
 
             # 3) Bulk upsert metrics
             metric_rows = []
@@ -163,15 +203,15 @@ def save_rds_metrics(pull_results: dict, account_id: str, region: str, profile_i
                 metric_rows.append({
                     "rds_resource_id": resource.rds_resource_id,
                     "metric_date": metric_date,
-                    "cpu_utilization": values.get("rds_cpu"),
-                    "database_connections": values.get("rds_conn"),
-                    "freeable_memory": values.get("rds_mem_free"),
-                    "free_storage_space": values.get("rds_storage_free"),
-                    "disk_queue_depth": values.get("rds_disk_q"),
-                    "ebs_byte_balance_pct": values.get("rds_ebs_byte_bal"),
-                    "ebs_io_balance_pct": values.get("rds_ebs_io_bal"),
-                    "cpu_credit_balance": values.get("rds_cpu_credit_bal"),
-                    "cpu_credit_usage": values.get("rds_cpu_credit_use"),
+                    "cpu_utilization": values.get("rds_cpu"),               # daily p95
+                    "database_connections": values.get("rds_conn"),         # daily max
+                    "freeable_memory": values.get("rds_mem_free"),          # daily min
+                    "free_storage_space": values.get("rds_storage_free"),   # daily min
+                    "disk_queue_depth": values.get("rds_disk_q"),           # daily max
+                    "ebs_byte_balance_pct": values.get("rds_ebs_byte_bal"), # daily min
+                    "ebs_io_balance_pct": values.get("rds_ebs_io_bal"),     # daily min
+                    "cpu_credit_balance": values.get("rds_cpu_credit_bal"), # daily min
+                    "cpu_credit_usage": values.get("rds_cpu_credit_use"),   # daily sum
                 })
 
             if metric_rows:
@@ -193,7 +233,7 @@ def save_rds_metrics(pull_results: dict, account_id: str, region: str, profile_i
                 db.execute(stmt)
                 db.commit()
 
-            logger.info(f"Saved {len(metric_rows)} metric rows for RDS {db_id}")
+            logger.info(f"Saved {len(metric_rows)} DAILY metric rows for RDS {db_id}")
 
     except Exception as e:
         db.rollback()

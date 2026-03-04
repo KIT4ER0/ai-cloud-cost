@@ -1,15 +1,25 @@
 import boto3
 import logging
-from datetime import datetime, timedelta, timezone
 from botocore.exceptions import ClientError
 from .cloudwatch_utils import get_cloudwatch_metric_data, print_all_datapoints
-from .aggregate import aggregate_hourly_to_daily, LAMBDA_STRATEGIES
+from .aggregate import aggregate_hourly_to_daily  # ใช้เป็น group-by-date ได้
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
 
-def build_lambda_metric_queries_hourly(function_name: str):
+# ──────────────────────────────────────────────────────────────
+# ✅ Daily CloudWatch Queries (Period = 86400)
+# ──────────────────────────────────────────────────────────────
+
+def build_lambda_metric_queries_daily(function_name: str):
+    """
+    Build CloudWatch MetricDataQueries that return DAILY buckets.
+
+    - Duration: DAILY p95 (true daily p95 computed by CloudWatch over the 1-day period)
+    - Invocations: DAILY Sum
+    - Errors: DAILY Sum
+    """
     dims = [{"Name": "FunctionName", "Value": function_name}]
 
     def q(_id: str, metric: str, stat: str):
@@ -22,17 +32,25 @@ def build_lambda_metric_queries_hourly(function_name: str):
                     "MetricName": metric,
                     "Dimensions": dims,
                 },
-                "Period": 3600,
-                "Stat": stat,
+                "Period": 86400,  # ✅ 1 day
+                "Stat": stat,     # ✅ supports extended like 'p95'
             },
             "ReturnData": True,
         }
 
     return [
-        q("duration", "Duration", "p95"),
-        q("invocations", "Invocations", "Sum"),
-        q("errors", "Errors", "Sum"),
+        q("duration", "Duration", "p95"),       # ✅ TRUE daily p95
+        q("invocations", "Invocations", "Sum"), # ✅ daily sum
+        q("errors", "Errors", "Sum"),           # ✅ daily sum
     ]
+
+
+# CloudWatch already returns DAILY buckets -> just pick that day's value
+LAMBDA_DAILY_STRATEGIES = {
+    "duration": "last",
+    "invocations": "last",
+    "errors": "last",
+}
 
 
 # ─── Lambda Function Discovery ────────────────────────────────────
@@ -71,7 +89,7 @@ def pull_lambda_metrics(
     timezone_offset_hours: int = 0,
 ) -> dict:
     """
-    End-to-end: list Lambda functions → build queries → fetch CloudWatch metrics.
+    End-to-end: list Lambda functions → build DAILY queries → fetch CloudWatch metrics.
     """
     functions = list_lambda_functions(customer_session, region)
 
@@ -82,7 +100,10 @@ def pull_lambda_metrics(
     all_results = {}
     for fn in functions:
         fname = fn["function_name"]
-        queries = build_lambda_metric_queries_hourly(fname)
+
+        # ✅ Use DAILY queries now
+        queries = build_lambda_metric_queries_daily(fname)
+
         metrics = get_cloudwatch_metric_data(
             customer_session=customer_session,
             region=region,
@@ -90,8 +111,9 @@ def pull_lambda_metrics(
             days_back=days_back,
             timezone_offset_hours=timezone_offset_hours,
         )
+
         all_results[fname] = {"function": fn, "metrics": metrics}
-        logger.info(f"Fetched metrics for {fname} ({fn['runtime']})")
+        logger.info(f"Fetched DAILY metrics for {fname} ({fn['runtime']})")
 
     logger.info(f"Completed metric pull for {len(all_results)} Lambda functions")
     return all_results
@@ -103,6 +125,11 @@ def save_lambda_metrics(pull_results: dict, account_id: str, region: str, profil
     """
     Save pulled Lambda metrics to the database.
     Upserts resources and bulk-upserts metric rows.
+
+    NOTE:
+    - CloudWatch now returns DAILY buckets already (Period=86400)
+    - We still use aggregate_hourly_to_daily() as a simple "group-by-date"
+      and set strategies to "last" to pick the daily value.
     """
     from .. import models, database
     from sqlalchemy.dialects.postgresql import insert
@@ -142,8 +169,8 @@ def save_lambda_metrics(pull_results: dict, account_id: str, region: str, profil
             if not cw_resp:
                 continue
 
-            # 2) Aggregate hourly → daily
-            daily = aggregate_hourly_to_daily(cw_resp, LAMBDA_STRATEGIES)
+            # 2) Group DAILY results by date (CloudWatch already daily)
+            daily = aggregate_hourly_to_daily(cw_resp, LAMBDA_DAILY_STRATEGIES)
 
             # 3) Bulk upsert metrics
             metric_rows = []
@@ -151,9 +178,9 @@ def save_lambda_metrics(pull_results: dict, account_id: str, region: str, profil
                 metric_rows.append({
                     "lambda_resource_id": resource.lambda_resource_id,
                     "metric_date": metric_date,
-                    "duration_p95": values.get("duration"),
-                    "invocations": values.get("invocations"),
-                    "errors": values.get("errors"),
+                    "duration_p95": values.get("duration"),     # daily p95
+                    "invocations": values.get("invocations"),   # daily sum
+                    "errors": values.get("errors"),             # daily sum
                 })
 
             if metric_rows:
@@ -169,7 +196,7 @@ def save_lambda_metrics(pull_results: dict, account_id: str, region: str, profil
                 db.execute(stmt)
                 db.commit()
 
-            logger.info(f"Saved {len(metric_rows)} metric rows for Lambda {fname}")
+            logger.info(f"Saved {len(metric_rows)} DAILY metric rows for Lambda {fname}")
 
     except Exception as e:
         db.rollback()

@@ -1,25 +1,48 @@
 import boto3
 import logging
-from datetime import datetime, timedelta, timezone
 from botocore.exceptions import ClientError
 from .cloudwatch_utils import get_cloudwatch_metric_data, print_all_datapoints
-from .aggregate import aggregate_hourly_to_daily, S3_STRATEGIES
+from .aggregate import aggregate_hourly_to_daily  # ใช้เป็น group-by-date ได้
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
 
-def build_s3_metric_queries_daily(bucket_name: str):
+def build_s3_metric_queries_daily(bucket_name: str, request_filter_id: str = "EntireBucket"):
     """
-    S3 metrics are reported once per day with StorageType dimension.
-    Period must be 86400 (1 day).
+    S3 has 2 families of metrics with different dimensions:
+
+    1) Storage metrics (daily, once/day):
+       Namespace: AWS/S3
+       Dimensions: BucketName, StorageType
+       Metrics: BucketSizeBytes, NumberOfObjects
+       Stat: Average
+       Period: 86400
+
+    2) Request metrics (must be enabled in S3):
+       Namespace: AWS/S3
+       Dimensions: BucketName, FilterId
+       Metrics: GetRequests, PutRequests, BytesDownloaded, BytesUploaded
+       Stat: Sum
+       Period: 86400
+
+    request_filter_id:
+      - Common value is "EntireBucket" when enabling request metrics for whole bucket
+      - If you configured a different filter id, pass it here
     """
-    dims = [
+    # Storage metrics dims
+    storage_dims = [
         {"Name": "BucketName", "Value": bucket_name},
         {"Name": "StorageType", "Value": "StandardStorage"},
     ]
 
-    def q(_id: str, metric: str, stat: str):
+    # Request metrics dims
+    request_dims = [
+        {"Name": "BucketName", "Value": bucket_name},
+        {"Name": "FilterId", "Value": request_filter_id},
+    ]
+
+    def q(_id: str, metric: str, stat: str, dims):
         return {
             "Id": _id,
             "Label": f"{bucket_name}:{metric}:{stat}:daily",
@@ -29,16 +52,34 @@ def build_s3_metric_queries_daily(bucket_name: str):
                     "MetricName": metric,
                     "Dimensions": dims,
                 },
-                "Period": 86400,
+                "Period": 86400,  # ✅ daily
                 "Stat": stat,
             },
             "ReturnData": True,
         }
 
     return [
-        q("storage_bytes", "BucketSizeBytes", "Average"),
-        q("num_objects", "NumberOfObjects", "Average"),
+        # ===== Storage (daily snapshot-ish) =====
+        q("storage_bytes", "BucketSizeBytes", "Average", storage_dims),
+        q("num_objects", "NumberOfObjects", "Average", storage_dims),
+
+        # ===== Requests (must enable S3 Request Metrics) =====
+        q("get_requests", "GetRequests", "Sum", request_dims),
+        q("put_requests", "PutRequests", "Sum", request_dims),
+        q("bytes_downloaded", "BytesDownloaded", "Sum", request_dims),
+        q("bytes_uploaded", "BytesUploaded", "Sum", request_dims),
     ]
+
+
+# CloudWatch already returns DAILY buckets -> just pick that day's value
+S3_DAILY_STRATEGIES = {
+    "storage_bytes": "last",
+    "num_objects": "last",
+    "get_requests": "last",
+    "put_requests": "last",
+    "bytes_downloaded": "last",
+    "bytes_uploaded": "last",
+}
 
 
 # ─── S3 Bucket Discovery ──────────────────────────────────────────
@@ -83,9 +124,10 @@ def pull_s3_metrics(
     region: str = "us-east-1",
     days_back: int = 30,
     timezone_offset_hours: int = 0,
+    request_filter_id: str = "EntireBucket",
 ) -> dict:
     """
-    End-to-end: list S3 buckets → build queries → fetch CloudWatch metrics.
+    End-to-end: list S3 buckets → build DAILY queries → fetch CloudWatch metrics.
     """
     buckets = list_s3_buckets(customer_session, region)
 
@@ -96,7 +138,9 @@ def pull_s3_metrics(
     all_results = {}
     for bkt in buckets:
         bname = bkt["bucket_name"]
-        queries = build_s3_metric_queries_daily(bname)
+
+        queries = build_s3_metric_queries_daily(bname, request_filter_id=request_filter_id)
+
         metrics = get_cloudwatch_metric_data(
             customer_session=customer_session,
             region=region,
@@ -104,8 +148,9 @@ def pull_s3_metrics(
             days_back=days_back,
             timezone_offset_hours=timezone_offset_hours,
         )
+
         all_results[bname] = {"bucket": bkt, "metrics": metrics}
-        logger.info(f"Fetched metrics for bucket {bname}")
+        logger.info(f"Fetched DAILY metrics for bucket {bname}")
 
     logger.info(f"Completed metric pull for {len(all_results)} S3 buckets")
     return all_results
@@ -117,6 +162,10 @@ def save_s3_metrics(pull_results: dict, account_id: str, region: str, profile_id
     """
     Save pulled S3 metrics to the database.
     Upserts resources and bulk-upserts metric rows.
+
+    NOTE:
+    - CloudWatch returns DAILY buckets (Period=86400)
+    - aggregate_hourly_to_daily() used as "group-by-date" with 'last'
     """
     from .. import models, database
     from sqlalchemy.dialects.postgresql import insert
@@ -146,8 +195,8 @@ def save_s3_metrics(pull_results: dict, account_id: str, region: str, profile_id
             if not cw_resp:
                 continue
 
-            # 2) Aggregate daily (S3 Period=86400)
-            daily = aggregate_hourly_to_daily(cw_resp, S3_STRATEGIES)
+            # 2) Group DAILY results by date
+            daily = aggregate_hourly_to_daily(cw_resp, S3_DAILY_STRATEGIES)
 
             # 3) Bulk upsert metrics
             metric_rows = []
@@ -155,8 +204,15 @@ def save_s3_metrics(pull_results: dict, account_id: str, region: str, profile_id
                 metric_rows.append({
                     "s3_resource_id": resource.s3_resource_id,
                     "metric_date": metric_date,
+
                     "bucket_size_bytes": values.get("storage_bytes"),
                     "number_of_objects": values.get("num_objects"),
+
+                    # ✅ new request metrics
+                    "get_requests": values.get("get_requests"),
+                    "put_requests": values.get("put_requests"),
+                    "bytes_downloaded": values.get("bytes_downloaded"),
+                    "bytes_uploaded": values.get("bytes_uploaded"),
                 })
 
             if metric_rows:
@@ -166,12 +222,16 @@ def save_s3_metrics(pull_results: dict, account_id: str, region: str, profile_id
                     set_={
                         "bucket_size_bytes": stmt.excluded.bucket_size_bytes,
                         "number_of_objects": stmt.excluded.number_of_objects,
+                        "get_requests": stmt.excluded.get_requests,
+                        "put_requests": stmt.excluded.put_requests,
+                        "bytes_downloaded": stmt.excluded.bytes_downloaded,
+                        "bytes_uploaded": stmt.excluded.bytes_uploaded,
                     }
                 )
                 db.execute(stmt)
                 db.commit()
 
-            logger.info(f"Saved {len(metric_rows)} metric rows for S3 {bname}")
+            logger.info(f"Saved {len(metric_rows)} DAILY metric rows for S3 {bname}")
 
     except Exception as e:
         db.rollback()

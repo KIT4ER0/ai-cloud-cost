@@ -1,18 +1,27 @@
 import boto3
 import logging
-from datetime import datetime, timedelta, timezone
 from botocore.exceptions import ClientError
 from .cloudwatch_utils import get_cloudwatch_metric_data, print_all_datapoints
-from .aggregate import aggregate_hourly_to_daily, ALB_STRATEGIES
+from .aggregate import aggregate_hourly_to_daily  # ใช้เป็น group-by-date ได้
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
 
-def build_alb_metric_queries_hourly(load_balancer_arn_suffix: str):
+# ──────────────────────────────────────────────────────────────
+# ✅ Daily CloudWatch Queries (Period = 86400)
+# ──────────────────────────────────────────────────────────────
+
+def build_alb_metric_queries_daily(load_balancer_arn_suffix: str):
     """
     ALB metrics use the LoadBalancer dimension which is the ARN suffix,
     e.g. 'app/my-alb/50dc6c495c0c9188'
+
+    Daily buckets:
+    - RequestCount: Sum (daily total requests)
+    - TargetResponseTime: p95 (true daily p95)
+    - HTTPCode_Target_5XX_Count: Sum
+    - ActiveConnectionCount: Maximum (gauge -> peak)
     """
     dims = [{"Name": "LoadBalancer", "Value": load_balancer_arn_suffix}]
 
@@ -26,18 +35,27 @@ def build_alb_metric_queries_hourly(load_balancer_arn_suffix: str):
                     "MetricName": metric,
                     "Dimensions": dims,
                 },
-                "Period": 3600,
-                "Stat": stat,
+                "Period": 86400,  # ✅ 1 day
+                "Stat": stat,     # ✅ extended allowed, e.g. 'p95'
             },
             "ReturnData": True,
         }
 
     return [
         q("request_count", "RequestCount", "Sum"),
-        q("response_time", "TargetResponseTime", "Average"),
+        q("response_time", "TargetResponseTime", "p95"),  # ✅ daily p95
         q("http_5xx", "HTTPCode_Target_5XX_Count", "Sum"),
-        q("active_conn", "ActiveConnectionCount", "Sum"),
+        q("active_conn", "ActiveConnectionCount", "Maximum"),  # ✅ gauge -> max
     ]
+
+
+# Since CloudWatch is already returning DAILY buckets, use "last" to pick the value.
+ALB_DAILY_STRATEGIES = {
+    "request_count": "last",
+    "response_time": "last",
+    "http_5xx": "last",
+    "active_conn": "last",
+}
 
 
 # ─── ALB Discovery ────────────────────────────────────────────────
@@ -87,7 +105,7 @@ def pull_alb_metrics(
     timezone_offset_hours: int = 0,
 ) -> dict:
     """
-    End-to-end: list ALBs → build queries → fetch CloudWatch metrics.
+    End-to-end: list ALBs → build DAILY queries → fetch CloudWatch metrics.
     """
     load_balancers = list_alb_load_balancers(customer_session, region)
 
@@ -98,7 +116,10 @@ def pull_alb_metrics(
     all_results = {}
     for lb in load_balancers:
         lb_name = lb["lb_name"]
-        queries = build_alb_metric_queries_hourly(lb["lb_arn_suffix"])
+
+        # ✅ Use DAILY queries now
+        queries = build_alb_metric_queries_daily(lb["lb_arn_suffix"])
+
         metrics = get_cloudwatch_metric_data(
             customer_session=customer_session,
             region=region,
@@ -106,8 +127,9 @@ def pull_alb_metrics(
             days_back=days_back,
             timezone_offset_hours=timezone_offset_hours,
         )
+
         all_results[lb_name] = {"load_balancer": lb, "metrics": metrics}
-        logger.info(f"Fetched metrics for ALB {lb_name}")
+        logger.info(f"Fetched DAILY metrics for ALB {lb_name}")
 
     logger.info(f"Completed metric pull for {len(all_results)} ALBs")
     return all_results
@@ -119,6 +141,11 @@ def save_alb_metrics(pull_results: dict, account_id: str, region: str, profile_i
     """
     Save pulled ALB metrics to the database.
     Upserts resources and bulk-upserts metric rows.
+
+    NOTE:
+    - CloudWatch now returns DAILY buckets already (Period=86400)
+    - We still use aggregate_hourly_to_daily() as a simple "group-by-date"
+      and set strategies to "last" to pick the daily value.
     """
     from .. import models, database
     from sqlalchemy.dialects.postgresql import insert
@@ -156,8 +183,8 @@ def save_alb_metrics(pull_results: dict, account_id: str, region: str, profile_i
             if not cw_resp:
                 continue
 
-            # 2) Aggregate hourly → daily
-            daily = aggregate_hourly_to_daily(cw_resp, ALB_STRATEGIES)
+            # 2) Group DAILY results by date (CloudWatch already daily)
+            daily = aggregate_hourly_to_daily(cw_resp, ALB_DAILY_STRATEGIES)
 
             # 3) Bulk upsert metrics
             metric_rows = []
@@ -166,7 +193,7 @@ def save_alb_metrics(pull_results: dict, account_id: str, region: str, profile_i
                     "alb_resource_id": resource.alb_resource_id,
                     "metric_date": metric_date,
                     "request_count": values.get("request_count"),
-                    "response_time_avg": values.get("response_time"),
+                    "response_time_p95": values.get("response_time"),  # daily p95
                     "http_5xx_count": values.get("http_5xx"),
                     "active_conn_count": values.get("active_conn"),
                 })
@@ -177,7 +204,7 @@ def save_alb_metrics(pull_results: dict, account_id: str, region: str, profile_i
                     index_elements=["alb_resource_id", "metric_date"],
                     set_={
                         "request_count": stmt.excluded.request_count,
-                        "response_time_avg": stmt.excluded.response_time_avg,
+                        "response_time_p95": stmt.excluded.response_time_p95,
                         "http_5xx_count": stmt.excluded.http_5xx_count,
                         "active_conn_count": stmt.excluded.active_conn_count,
                     }
@@ -185,7 +212,7 @@ def save_alb_metrics(pull_results: dict, account_id: str, region: str, profile_i
                 db.execute(stmt)
                 db.commit()
 
-            logger.info(f"Saved {len(metric_rows)} metric rows for ALB {lb_name}")
+            logger.info(f"Saved {len(metric_rows)} DAILY metric rows for ALB {lb_name}")
 
     except Exception as e:
         db.rollback()

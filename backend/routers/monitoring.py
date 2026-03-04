@@ -113,6 +113,10 @@ def get_s3_metrics(resource_id: int, db: Session = Depends(database.get_db)):
             metric_date=str(r.metric_date),
             bucket_size_bytes=r.bucket_size_bytes,
             number_of_objects=r.number_of_objects,
+            get_requests=r.get_requests,
+            put_requests=r.put_requests,
+            bytes_downloaded=r.bytes_downloaded,
+            bytes_uploaded=r.bytes_uploaded,
         ) for r in rows
     ]
 
@@ -136,7 +140,7 @@ def get_alb_metrics(resource_id: int, db: Session = Depends(database.get_db)):
         schemas.ALBMetricOut(
             metric_date=str(r.metric_date),
             request_count=r.request_count,
-            response_time_avg=r.response_time_avg,
+            response_time_p95=r.response_time_p95,
             http_5xx_count=r.http_5xx_count,
             active_conn_count=r.active_conn_count,
         ) for r in rows

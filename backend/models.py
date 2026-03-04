@@ -231,6 +231,10 @@ class S3Metric(Base):
     metric_date = Column(Date, nullable=False, index=True)
     bucket_size_bytes = Column(Float)
     number_of_objects = Column(Float)
+    get_requests = Column(Float)
+    put_requests = Column(Float)
+    bytes_downloaded = Column(Float)
+    bytes_uploaded = Column(Float)
 
     resource = relationship("S3Resource", back_populates="metrics")
 
@@ -284,7 +288,7 @@ class ALBMetric(Base):
     alb_resource_id = Column(BigInteger, ForeignKey("cloudcost.alb_resources.alb_resource_id", ondelete="CASCADE"), nullable=False)
     metric_date = Column(Date, nullable=False, index=True)
     request_count = Column(Float)
-    response_time_avg = Column(Float)
+    response_time_p95 = Column(Float)
     http_5xx_count = Column(Float)
     active_conn_count = Column(Float)
 
