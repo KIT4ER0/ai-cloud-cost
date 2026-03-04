@@ -41,6 +41,7 @@ def _last_val(_current: Optional[float], new: float) -> float:
 # Strategy mapping
 STRATEGY = {
     "max": _max_val,
+    "p95": _max_val,  # Combine hourly p95s by taking the max representing the daily peak
     "min": _min_val,
     "sum": _sum_val,
     "last": _last_val,
@@ -94,14 +95,14 @@ def aggregate_hourly_to_daily(
 # ─── Service-Specific Strategies ──────────────────────────────────
 
 EC2_STRATEGIES: Dict[str, str] = {
-    "cpu": "max",
+    "cpu": "p95",
     "netin": "sum",
     "netout": "sum",
     "cpu_credit": "max",
 }
 
 RDS_STRATEGIES: Dict[str, str] = {
-    "rds_cpu": "max",
+    "rds_cpu": "p95",
     "rds_conn": "max",
     "rds_mem_free": "min",
     "rds_storage_free": "min",
@@ -113,7 +114,7 @@ RDS_STRATEGIES: Dict[str, str] = {
 }
 
 LAMBDA_STRATEGIES: Dict[str, str] = {
-    "duration": "max",
+    "duration": "p95",
     "invocations": "sum",
     "errors": "sum",
 }

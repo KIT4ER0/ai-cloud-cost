@@ -29,7 +29,7 @@ def build_ec2_metric_queries_hourly(instance_id: str):
         }
 
     return [
-        q("cpu", "CPUUtilization", "Average"),
+        q("cpu", "CPUUtilization", "p95"),
         q("netin", "NetworkIn", "Sum"),
         q("netout", "NetworkOut", "Sum"),
         q("cpu_credit", "CPUCreditUsage", "Average"),

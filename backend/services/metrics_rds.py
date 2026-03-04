@@ -30,7 +30,7 @@ def build_rds_metric_queries_hourly(db_identifier: str):
 
     return [
         # ===== Core =====
-        q("rds_cpu", "CPUUtilization", "Average"),
+        q("rds_cpu", "CPUUtilization", "p95"),
         q("rds_conn", "DatabaseConnections", "Average"),
         q("rds_mem_free", "FreeableMemory", "Average"),
         q("rds_storage_free", "FreeStorageSpace", "Average"),
