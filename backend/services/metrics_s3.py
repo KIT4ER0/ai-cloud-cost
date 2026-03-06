@@ -2,7 +2,7 @@ import boto3
 import logging
 from botocore.exceptions import ClientError
 from .cloudwatch_utils import get_cloudwatch_metric_data, print_all_datapoints
-from .aggregate import aggregate_hourly_to_daily  # ใช้เป็น group-by-date ได้
+from .aggregate import group_cw_by_date
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
@@ -70,16 +70,6 @@ def build_s3_metric_queries_daily(bucket_name: str, request_filter_id: str = "En
         q("bytes_uploaded", "BytesUploaded", "Sum", request_dims),
     ]
 
-
-# CloudWatch already returns DAILY buckets -> just pick that day's value
-S3_DAILY_STRATEGIES = {
-    "storage_bytes": "last",
-    "num_objects": "last",
-    "get_requests": "last",
-    "put_requests": "last",
-    "bytes_downloaded": "last",
-    "bytes_uploaded": "last",
-}
 
 
 # ─── S3 Bucket Discovery ──────────────────────────────────────────
@@ -162,10 +152,6 @@ def save_s3_metrics(pull_results: dict, account_id: str, region: str, profile_id
     """
     Save pulled S3 metrics to the database.
     Upserts resources and bulk-upserts metric rows.
-
-    NOTE:
-    - CloudWatch returns DAILY buckets (Period=86400)
-    - aggregate_hourly_to_daily() used as "group-by-date" with 'last'
     """
     from .. import models, database
     from sqlalchemy.dialects.postgresql import insert
@@ -195,8 +181,8 @@ def save_s3_metrics(pull_results: dict, account_id: str, region: str, profile_id
             if not cw_resp:
                 continue
 
-            # 2) Group DAILY results by date
-            daily = aggregate_hourly_to_daily(cw_resp, S3_DAILY_STRATEGIES)
+            # 2) Parse daily CloudWatch results
+            daily = group_cw_by_date(cw_resp)
 
             # 3) Bulk upsert metrics
             metric_rows = []

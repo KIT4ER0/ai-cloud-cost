@@ -2,7 +2,7 @@ import boto3
 import logging
 from botocore.exceptions import ClientError
 from .cloudwatch_utils import get_cloudwatch_metric_data, print_all_datapoints
-from .aggregate import aggregate_hourly_to_daily  # ใช้เป็น group-by-date ได้
+from .aggregate import group_cw_by_date
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
@@ -63,18 +63,6 @@ def build_rds_metric_queries_daily(db_identifier: str):
     ]
 
 
-# CloudWatch already returns DAILY buckets -> just pick that day's value
-RDS_DAILY_STRATEGIES = {
-    "rds_cpu": "last",
-    "rds_conn": "last",
-    "rds_mem_free": "last",
-    "rds_storage_free": "last",
-    "rds_disk_q": "last",
-    "rds_ebs_byte_bal": "last",
-    "rds_ebs_io_bal": "last",
-    "rds_cpu_credit_bal": "last",
-    "rds_cpu_credit_use": "last",
-}
 
 
 # ─── RDS Instance Discovery ───────────────────────────────────────
@@ -150,11 +138,6 @@ def save_rds_metrics(pull_results: dict, account_id: str, region: str, profile_i
     """
     Save pulled RDS metrics to the database.
     Upserts resources and bulk-upserts metric rows.
-
-    NOTE:
-    - CloudWatch now returns DAILY buckets already (Period=86400)
-    - We still use aggregate_hourly_to_daily() as a simple "group-by-date"
-      and set strategies to "last" to pick the daily value.
     """
     from .. import models, database
     from sqlalchemy.dialects.postgresql import insert
@@ -194,8 +177,8 @@ def save_rds_metrics(pull_results: dict, account_id: str, region: str, profile_i
             if not cw_resp:
                 continue
 
-            # 2) Group DAILY results by date (CloudWatch already daily)
-            daily = aggregate_hourly_to_daily(cw_resp, RDS_DAILY_STRATEGIES)
+            # 2) Parse daily CloudWatch results
+            daily = group_cw_by_date(cw_resp)
 
             # 3) Bulk upsert metrics
             metric_rows = []

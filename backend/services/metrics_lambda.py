@@ -2,7 +2,7 @@ import boto3
 import logging
 from botocore.exceptions import ClientError
 from .cloudwatch_utils import get_cloudwatch_metric_data, print_all_datapoints
-from .aggregate import aggregate_hourly_to_daily  # ใช้เป็น group-by-date ได้
+from .aggregate import group_cw_by_date
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
@@ -45,12 +45,6 @@ def build_lambda_metric_queries_daily(function_name: str):
     ]
 
 
-# CloudWatch already returns DAILY buckets -> just pick that day's value
-LAMBDA_DAILY_STRATEGIES = {
-    "duration": "last",
-    "invocations": "last",
-    "errors": "last",
-}
 
 
 # ─── Lambda Function Discovery ────────────────────────────────────
@@ -125,11 +119,6 @@ def save_lambda_metrics(pull_results: dict, account_id: str, region: str, profil
     """
     Save pulled Lambda metrics to the database.
     Upserts resources and bulk-upserts metric rows.
-
-    NOTE:
-    - CloudWatch now returns DAILY buckets already (Period=86400)
-    - We still use aggregate_hourly_to_daily() as a simple "group-by-date"
-      and set strategies to "last" to pick the daily value.
     """
     from .. import models, database
     from sqlalchemy.dialects.postgresql import insert
@@ -169,8 +158,8 @@ def save_lambda_metrics(pull_results: dict, account_id: str, region: str, profil
             if not cw_resp:
                 continue
 
-            # 2) Group DAILY results by date (CloudWatch already daily)
-            daily = aggregate_hourly_to_daily(cw_resp, LAMBDA_DAILY_STRATEGIES)
+            # 2) Parse daily CloudWatch results
+            daily = group_cw_by_date(cw_resp)
 
             # 3) Bulk upsert metrics
             metric_rows = []
