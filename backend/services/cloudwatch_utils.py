@@ -40,11 +40,20 @@ def get_cloudwatch_metric_data(
     customer_session: boto3.Session,
     region: str,
     metric_data_queries: list,
-    days_back: int = 30,
+    days_back: int = 60,
     max_datapoints: int = 10000,
     align_to_day: bool = True,
     timezone_offset_hours: int = 0,
+    start_time: datetime | None = None,
 ):
+    """
+    Fetch CloudWatch metric data with pagination.
+
+    Args:
+        start_time: If provided, use this as the start time directly
+                    (overrides days_back). Must be timezone-aware.
+        days_back:  Fallback — used only when start_time is not provided.
+    """
     cw = customer_session.client("cloudwatch", region_name=region)
 
     tz = timezone(timedelta(hours=timezone_offset_hours))
@@ -52,12 +61,17 @@ def get_cloudwatch_metric_data(
 
     if align_to_day:
         end_time = datetime(now.year, now.month, now.day, tzinfo=tz) + timedelta(days=1)
-        start_time = end_time - timedelta(days=days_back)
     else:
         end_time = now
-        start_time = now - timedelta(days=days_back)
 
-    start_time_utc = start_time.astimezone(timezone.utc)
+    if start_time is not None:
+        # Use the provided start_time directly
+        computed_start = start_time
+    else:
+        # Fallback to days_back
+        computed_start = end_time - timedelta(days=days_back)
+
+    start_time_utc = computed_start.astimezone(timezone.utc)
     end_time_utc = end_time.astimezone(timezone.utc)
 
     try:

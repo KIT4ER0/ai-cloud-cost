@@ -72,8 +72,8 @@ def list_rds_instances(
     region: str = "us-east-1",
 ) -> list[dict]:
     """
-    List all RDS DB instances in the customer's account via DescribeDBInstances.
-    Uses paginator to handle accounts with many instances.
+    List all RDS DB instances in the customer's account.
+    Returns list of dicts including created_time for each instance.
     """
     rds = customer_session.client("rds", region_name=region)
     instances = []
@@ -87,6 +87,7 @@ def list_rds_instances(
                 "instance_class": db.get("DBInstanceClass"),
                 "storage_type": db.get("StorageType"),
                 "allocated_gb": db.get("AllocatedStorage"),
+                "created_time": db.get("InstanceCreateTime"),  # datetime (tz-aware)
             })
 
     logger.info(f"Found {len(instances)} RDS instances in {region}")
@@ -98,11 +99,11 @@ def list_rds_instances(
 def pull_rds_metrics(
     customer_session: boto3.Session,
     region: str = "us-east-1",
-    days_back: int = 30,
     timezone_offset_hours: int = 0,
 ) -> dict:
     """
     End-to-end: list RDS instances → build DAILY queries → fetch CloudWatch metrics.
+    Uses each instance's InstanceCreateTime as the start of the metric range.
     """
     instances = list_rds_instances(customer_session, region)
 
@@ -113,20 +114,18 @@ def pull_rds_metrics(
     all_results = {}
     for inst in instances:
         db_id = inst["db_identifier"]
-
-        # ✅ Use DAILY queries now
         queries = build_rds_metric_queries_daily(db_id)
 
         metrics = get_cloudwatch_metric_data(
             customer_session=customer_session,
             region=region,
             metric_data_queries=queries,
-            days_back=days_back,
+            start_time=inst.get("created_time"),
             timezone_offset_hours=timezone_offset_hours,
         )
 
         all_results[db_id] = {"instance": inst, "metrics": metrics}
-        logger.info(f"Fetched DAILY metrics for {db_id} ({inst['engine']})")
+        logger.info(f"Fetched DAILY metrics for {db_id} (since {inst.get('created_time')})")
 
     logger.info(f"Completed metric pull for {len(all_results)} RDS instances")
     return all_results

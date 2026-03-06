@@ -106,7 +106,6 @@ def test_pull_ec2_metrics(
         results = pull_ec2_metrics(
             customer_session=session,
             region=region,
-            days_back=days_back,
             timezone_offset_hours=7,
         )
     except Exception as e:
@@ -153,7 +152,6 @@ def test_pull_rds_metrics(
         results = pull_rds_metrics(
             customer_session=session,
             region=region,
-            days_back=days_back,
             timezone_offset_hours=7,
         )
     except Exception as e:

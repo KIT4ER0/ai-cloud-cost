@@ -80,6 +80,7 @@ def list_s3_buckets(
 ) -> list[dict]:
     """
     List all S3 buckets in the customer's account, filtering by region.
+    Returns list of dicts including created_time for each bucket.
     """
     s3 = customer_session.client("s3", region_name=region)
     buckets = []
@@ -95,6 +96,7 @@ def list_s3_buckets(
                     buckets.append({
                         "bucket_name": bucket_name,
                         "region": bucket_region,
+                        "created_time": b.get("CreationDate"),  # datetime (tz-aware)
                     })
             except ClientError as e:
                 logger.warning(f"Cannot get location for bucket {bucket_name}: {e}")
@@ -112,12 +114,12 @@ def list_s3_buckets(
 def pull_s3_metrics(
     customer_session: boto3.Session,
     region: str = "us-east-1",
-    days_back: int = 30,
     timezone_offset_hours: int = 0,
     request_filter_id: str = "EntireBucket",
 ) -> dict:
     """
     End-to-end: list S3 buckets → build DAILY queries → fetch CloudWatch metrics.
+    Uses each bucket's CreationDate as the start of the metric range.
     """
     buckets = list_s3_buckets(customer_session, region)
 
@@ -128,19 +130,18 @@ def pull_s3_metrics(
     all_results = {}
     for bkt in buckets:
         bname = bkt["bucket_name"]
-
         queries = build_s3_metric_queries_daily(bname, request_filter_id=request_filter_id)
 
         metrics = get_cloudwatch_metric_data(
             customer_session=customer_session,
             region=region,
             metric_data_queries=queries,
-            days_back=days_back,
+            start_time=bkt.get("created_time"),
             timezone_offset_hours=timezone_offset_hours,
         )
 
         all_results[bname] = {"bucket": bkt, "metrics": metrics}
-        logger.info(f"Fetched DAILY metrics for bucket {bname}")
+        logger.info(f"Fetched DAILY metrics for bucket {bname} (since {bkt.get('created_time')})")
 
     logger.info(f"Completed metric pull for {len(all_results)} S3 buckets")
     return all_results

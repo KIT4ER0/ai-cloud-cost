@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 def group_cw_by_date(
     cw_resp: dict,
-) -> Dict[date, Dict[str, float]]:
+) -> dict[date, dict[str, float]]:
     """
     Parse a CloudWatch MetricDataResults response (daily Period=86400)
     into a dict keyed by date.

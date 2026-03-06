@@ -54,20 +54,32 @@ def list_lambda_functions(
     region: str = "us-east-1",
 ) -> list[dict]:
     """
-    List all Lambda functions in the customer's account via ListFunctions.
+    List all Lambda functions in the customer's account.
+    Returns list of dicts including last_modified for each function.
     """
+    from datetime import datetime, timezone as tz
     lam = customer_session.client("lambda", region_name=region)
     functions = []
 
     paginator = lam.get_paginator("list_functions")
     for page in paginator.paginate():
         for fn in page["Functions"]:
+            # Lambda LastModified is a string like '2024-01-15T10:30:00.000+0000'
+            last_mod_str = fn.get("LastModified")
+            last_mod_dt = None
+            if last_mod_str:
+                try:
+                    last_mod_dt = datetime.fromisoformat(last_mod_str.replace("+0000", "+00:00"))
+                except ValueError:
+                    pass
+
             functions.append({
                 "function_name": fn["FunctionName"],
                 "function_arn": fn.get("FunctionArn"),
                 "runtime": fn.get("Runtime"),
                 "memory_mb": fn.get("MemorySize"),
                 "timeout_sec": fn.get("Timeout"),
+                "last_modified": last_mod_dt,  # datetime (tz-aware) or None
             })
 
     logger.info(f"Found {len(functions)} Lambda functions in {region}")
@@ -79,11 +91,11 @@ def list_lambda_functions(
 def pull_lambda_metrics(
     customer_session: boto3.Session,
     region: str = "us-east-1",
-    days_back: int = 30,
     timezone_offset_hours: int = 0,
 ) -> dict:
     """
     End-to-end: list Lambda functions → build DAILY queries → fetch CloudWatch metrics.
+    Uses each function's LastModified as the start of the metric range.
     """
     functions = list_lambda_functions(customer_session, region)
 
@@ -94,20 +106,18 @@ def pull_lambda_metrics(
     all_results = {}
     for fn in functions:
         fname = fn["function_name"]
-
-        # ✅ Use DAILY queries now
         queries = build_lambda_metric_queries_daily(fname)
 
         metrics = get_cloudwatch_metric_data(
             customer_session=customer_session,
             region=region,
             metric_data_queries=queries,
-            days_back=days_back,
+            start_time=fn.get("last_modified"),
             timezone_offset_hours=timezone_offset_hours,
         )
 
         all_results[fname] = {"function": fn, "metrics": metrics}
-        logger.info(f"Fetched DAILY metrics for {fname} ({fn['runtime']})")
+        logger.info(f"Fetched DAILY metrics for {fname} (since {fn.get('last_modified')})")
 
     logger.info(f"Completed metric pull for {len(all_results)} Lambda functions")
     return all_results

@@ -68,6 +68,7 @@ def list_alb_load_balancers(
 ) -> list[dict]:
     """
     List all Application Load Balancers in the customer's account.
+    Returns list of dicts including created_time for each ALB.
     """
     elbv2 = customer_session.client("elbv2", region_name=region)
     load_balancers = []
@@ -82,6 +83,7 @@ def list_alb_load_balancers(
                     "lb_arn_suffix": _extract_alb_arn_suffix(lb["LoadBalancerArn"]),
                     "dns_name": lb.get("DNSName"),
                     "scheme": lb.get("Scheme"),
+                    "created_time": lb.get("CreatedTime"),  # datetime (tz-aware)
                 })
 
     logger.info(f"Found {len(load_balancers)} ALBs in {region}")
@@ -93,11 +95,11 @@ def list_alb_load_balancers(
 def pull_alb_metrics(
     customer_session: boto3.Session,
     region: str = "us-east-1",
-    days_back: int = 30,
     timezone_offset_hours: int = 0,
 ) -> dict:
     """
     End-to-end: list ALBs → build DAILY queries → fetch CloudWatch metrics.
+    Uses each ALB's CreatedTime as the start of the metric range.
     """
     load_balancers = list_alb_load_balancers(customer_session, region)
 
@@ -108,20 +110,18 @@ def pull_alb_metrics(
     all_results = {}
     for lb in load_balancers:
         lb_name = lb["lb_name"]
-
-        # ✅ Use DAILY queries now
         queries = build_alb_metric_queries_daily(lb["lb_arn_suffix"])
 
         metrics = get_cloudwatch_metric_data(
             customer_session=customer_session,
             region=region,
             metric_data_queries=queries,
-            days_back=days_back,
+            start_time=lb.get("created_time"),
             timezone_offset_hours=timezone_offset_hours,
         )
 
         all_results[lb_name] = {"load_balancer": lb, "metrics": metrics}
-        logger.info(f"Fetched DAILY metrics for ALB {lb_name}")
+        logger.info(f"Fetched DAILY metrics for ALB {lb_name} (since {lb.get('created_time')})")
 
     logger.info(f"Completed metric pull for {len(all_results)} ALBs")
     return all_results
