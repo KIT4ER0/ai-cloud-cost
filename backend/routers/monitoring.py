@@ -18,7 +18,8 @@ def get_ec2_resources(
     db: Session = Depends(database.get_db),
 ):
     return db.query(models.EC2Resource).filter(
-        models.EC2Resource.profile_id == current_user.profile_id
+        models.EC2Resource.profile_id == current_user.profile_id,
+        models.EC2Resource.instance_id != 'AGGREGATED'
     ).all()
 
 @router.get("/ec2/{resource_id}/metrics", response_model=List[schemas.EC2MetricOut])

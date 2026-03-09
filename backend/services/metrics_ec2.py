@@ -228,10 +228,34 @@ def smart_sync_ec2_metrics(
 
     db = database.SessionLocal()
     try:
-        # Get all EC2 resources for this profile
+        # 1. Discover live instances & upsert to DB
+        logger.info(f"Discovering EC2 instances for profile {profile_id} in {region}...")
+        live_instances = list_ec2_instances(customer_session, region)
+        for inst in live_instances:
+            iid = inst["instance_id"]
+            resource = db.query(models.EC2Resource).filter_by(
+                account_id=account_id, region=region, instance_id=iid
+            ).first()
+            if not resource:
+                resource = models.EC2Resource(
+                    profile_id=profile_id,
+                    account_id=account_id,
+                    region=region,
+                    instance_id=iid,
+                    instance_type=inst.get("instance_type"),
+                    state=inst.get("state")
+                )
+                db.add(resource)
+            else:
+                resource.instance_type = inst.get("instance_type")
+                resource.state = inst.get("state")
+        db.commit()
+
+        # 2. Get all EC2 resources for this profile
         resources = (
             db.query(models.EC2Resource)
             .filter_by(profile_id=profile_id, region=region)
+            .filter(models.EC2Resource.instance_id != 'AGGREGATED')
             .all()
         )
 
