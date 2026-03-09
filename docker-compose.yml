@@ -9,7 +9,7 @@ services:
       POSTGRES_USER: ai_user
       POSTGRES_PASSWORD: ai_password
     ports:
-      - "5433:5432"
+      - "5432:5432"
     volumes:
       - dbdata:/var/lib/postgresql/data
     healthcheck:
@@ -40,7 +40,14 @@ services:
       - "8000:8000"
     environment:
       - PYTHONUNBUFFERED=1
-      - DATABASE_URL=postgresql+psycopg2://ai_user:ai_password@db:5432/ai_cost
+      - DB_USER=postgres.gedvftitzptqvyuntgvh
+      - DB_PASSWORD=Fxig08xuluj
+      - DB_HOST=aws-1-ap-northeast-1.pooler.supabase.com
+      - DB_PORT=6543
+      - DB_NAME=postgres
+      - SUPABASE_URL=https://gedvftitzptqvyuntgvh.supabase.co
+    env_file:
+      - ./backend/.env
     depends_on:
       db:
         condition: service_healthy
@@ -50,21 +57,21 @@ services:
       uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
 
   ui:
-    build:
-      context: .
-      dockerfile: infra/Dockerfile.ui
+    image: node:22-alpine
     container_name: ai_cost_ui
     ports:
       - "5173:5173"
     environment:
       - VITE_API_URL=http://localhost:8000
     depends_on:
+      db:
+        condition: service_healthy
       api:
         condition: service_started
+    working_dir: /app/frontend
     volumes:
-      - ./frontend:/app # dev: แก้ UI สดได้ (Vite HMR)
-      - /app/node_modules # ไม่ให้ host override node_modules
+      - ./frontend:/app/frontend # dev: แก้ UI สดได้
     command: >
-      pnpm dev --host 0.0.0.0 --port 5173
+      sh -c "npm install && npm run dev -- --host 0.0.0.0 --port 5173"
 volumes:
   dbdata:

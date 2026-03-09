@@ -1,53 +1,108 @@
-from datetime import datetime, timedelta
+"""
+Supabase Auth integration for FastAPI.
+Verifies Supabase JWT tokens (ES256 via JWKS) and manages user profiles.
+"""
+import os
+import secrets
+import logging
 from typing import Optional
-from jose import JWTError, jwt
-from passlib.context import CryptContext
+from functools import lru_cache
+
+import jwt as pyjwt
+from jwt import PyJWKClient
 from fastapi import Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
+
 try:
     from . import models, database
 except ImportError:
-    import models, database
+    from backend import models, database
 
-# SECRET_KEY should be in env vars in prod
-SECRET_KEY = "supersecretkey"
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
+logger = logging.getLogger(__name__)
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
+# Supabase config
+SUPABASE_URL = os.getenv("SUPABASE_URL", "")
 
-def verify_password(plain_password, hashed_password):
-    return pwd_context.verify(plain_password, hashed_password)
+# Use HTTPBearer (Supabase sends Bearer tokens)
+security = HTTPBearer()
 
-def get_password_hash(password):
-    return pwd_context.hash(password)
 
-def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
-    to_encode = data.copy()
-    if expires_delta:
-        expire = datetime.utcnow() + expires_delta
-    else:
-        expire = datetime.utcnow() + timedelta(minutes=15)
-    to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
-    return encoded_jwt
+@lru_cache(maxsize=1)
+def _get_jwks_client() -> PyJWKClient:
+    """Create and cache a PyJWKClient that fetches public keys from Supabase."""
+    if not SUPABASE_URL:
+        raise RuntimeError("SUPABASE_URL not configured")
+    jwks_url = f"{SUPABASE_URL}/auth/v1/.well-known/jwks.json"
+    logger.info(f"JWKS endpoint: {jwks_url}")
+    return PyJWKClient(jwks_url, cache_keys=True)
 
-def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(database.get_db)):
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
+
+def _decode_supabase_token(token: str) -> dict:
+    """Decode and verify a Supabase JWT token using JWKS (ES256)."""
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        email: str = payload.get("sub")
-        if email is None:
-            raise credentials_exception
-    except JWTError:
-        raise credentials_exception
-    user = db.query(models.User).filter(models.User.email == email).first()
-    if user is None:
-        raise credentials_exception
-    return user
+        jwks_client = _get_jwks_client()
+        signing_key = jwks_client.get_signing_key_from_jwt(token)
+        payload = pyjwt.decode(
+            token,
+            signing_key.key,
+            algorithms=["ES256"],
+            audience="authenticated",
+        )
+        return payload
+    except pyjwt.ExpiredSignatureError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token has expired",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    except pyjwt.InvalidTokenError as e:
+        logger.warning(f"JWT decode failed: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    except RuntimeError as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
+        )
+
+
+def get_current_user(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: Session = Depends(database.get_db),
+) -> models.UserProfile:
+    """
+    Verify Supabase JWT → extract user UUID → get-or-create UserProfile.
+    Returns the UserProfile ORM object.
+    """
+    payload = _decode_supabase_token(credentials.credentials)
+
+    supabase_user_id: Optional[str] = payload.get("sub")
+    if not supabase_user_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token missing 'sub' claim",
+        )
+
+    email: str = payload.get("email", "")
+
+    # Get or create UserProfile
+    profile = db.query(models.UserProfile).filter_by(
+        supabase_user_id=supabase_user_id
+    ).first()
+
+    if not profile:
+        profile = models.UserProfile(
+            supabase_user_id=supabase_user_id,
+            email=email,
+            aws_external_id=secrets.token_urlsafe(24),
+        )
+        db.add(profile)
+        db.commit()
+        db.refresh(profile)
+        logger.info(f"Created UserProfile for {email} (supabase_id={supabase_user_id})")
+
+    return profile

@@ -7,6 +7,7 @@ import Monitoring from "@/pages/Monitoring"
 import Recommend from "@/pages/Recommend"
 import Onboarding from "@/pages/Onboarding"
 import SignIn from "@/pages/SignIn"
+import Profile from "@/pages/Profile"
 
 export const router = createBrowserRouter([
     {
@@ -36,6 +37,10 @@ export const router = createBrowserRouter([
             {
                 path: "recommend",
                 element: <Recommend />,
+            },
+            {
+                path: "profile",
+                element: <Profile />,
             },
         ],
     },

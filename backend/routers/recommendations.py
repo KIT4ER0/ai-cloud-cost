@@ -11,14 +11,11 @@ router = APIRouter(
 )
 
 @router.get("/recommendations", response_model=List[schemas.RecommendationItem])
-def get_recommendations(db: Session = Depends(database.get_db)):
-    recs = db.query(models.Recommendation).filter(models.Recommendation.status == "Active").all()
-    return [
-        {
-            "title": r.title,
-            "impact": r.impact,
-            "priority_score": r.priority_score,
-            "description": r.description
-        }
-        for r in recs
-    ]
+def get_recommendations(
+    current_user: models.UserProfile = Depends(auth.get_current_user),
+    db: Session = Depends(database.get_db),
+):
+    return db.query(models.Recommendation).filter(
+        models.Recommendation.profile_id == current_user.profile_id,
+        models.Recommendation.status == "open",
+    ).all()

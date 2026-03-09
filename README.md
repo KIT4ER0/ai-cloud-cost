@@ -13,8 +13,8 @@ etl
  - python -m etl.etl_metrics
 
 
-API (FastAPI) → http://localhost:8000/health
-UI (Streamlit) → http://localhost:8501
+API (FastAPI) → http://localhost:8000/docs
+UI (React) → http://localhost:5173
 pgAdmin → http://localhost:5050
 email: admin@example.com
 password: admin123

@@ -1,24 +1,21 @@
 -- =========================
 -- Schema: cloudcost
--- Services: EC2, Lambda, RDS, S3
--- metrics & costs have their own IDs (PK)
--- No aws_accounts/aws_regions tables
--- No created_at/updated_at
--- No user_id in any table
+-- Services: EC2, Lambda, RDS, S3, ALB
+-- Auth: Supabase Auth (auth.users)
 -- =========================
 
 CREATE SCHEMA IF NOT EXISTS cloudcost;
 SET search_path TO cloudcost;
 
 -- =========================
--- Users
+-- User Profiles
 -- =========================
-CREATE TABLE IF NOT EXISTS users (
-  user_id        BIGSERIAL PRIMARY KEY,
-  email          TEXT NOT NULL UNIQUE,
-  password_hash  TEXT NOT NULL,
-  aws_role_arn   TEXT,
-  aws_external_id TEXT UNIQUE
+CREATE TABLE IF NOT EXISTS user_profiles (
+  profile_id          BIGSERIAL PRIMARY KEY,
+  supabase_user_id    TEXT NOT NULL UNIQUE,
+  email               TEXT,
+  aws_role_arn        TEXT,
+  aws_external_id     TEXT UNIQUE
 );
 
 -- =========================
@@ -26,6 +23,7 @@ CREATE TABLE IF NOT EXISTS users (
 -- =========================
 CREATE TABLE IF NOT EXISTS ec2_resources (
   ec2_resource_id BIGSERIAL PRIMARY KEY,
+  profile_id      BIGINT NOT NULL REFERENCES user_profiles(profile_id),
   account_id      VARCHAR(12) NOT NULL,
   region          TEXT NOT NULL,
   instance_id     TEXT NOT NULL,
@@ -38,8 +36,10 @@ CREATE TABLE IF NOT EXISTS ec2_metrics (
   ec2_metric_id       BIGSERIAL PRIMARY KEY,
   ec2_resource_id     BIGINT NOT NULL REFERENCES ec2_resources(ec2_resource_id) ON DELETE CASCADE,
   metric_date         DATE NOT NULL,
-  cpu_p95             DOUBLE PRECISION,
-  network_out_gb_sum  DOUBLE PRECISION,
+  cpu_utilization     float,
+  network_in          float,
+  network_out         float,
+  cpu_credit_usage    float,
   UNIQUE (ec2_resource_id, metric_date)
 );
 
@@ -54,6 +54,7 @@ CREATE TABLE IF NOT EXISTS ec2_costs (
 );
 
 CREATE INDEX IF NOT EXISTS idx_ec2_resources_acct_region ON ec2_resources(account_id, region);
+CREATE INDEX IF NOT EXISTS idx_ec2_resources_profile     ON ec2_resources(profile_id);
 CREATE INDEX IF NOT EXISTS idx_ec2_metrics_date          ON ec2_metrics(metric_date);
 CREATE INDEX IF NOT EXISTS idx_ec2_costs_date            ON ec2_costs(usage_date);
 
@@ -62,6 +63,7 @@ CREATE INDEX IF NOT EXISTS idx_ec2_costs_date            ON ec2_costs(usage_date
 -- =========================
 CREATE TABLE IF NOT EXISTS lambda_resources (
   lambda_resource_id BIGSERIAL PRIMARY KEY,
+  profile_id         BIGINT NOT NULL REFERENCES user_profiles(profile_id),
   account_id         VARCHAR(12) NOT NULL,
   region             TEXT NOT NULL,
   function_name      TEXT NOT NULL,
@@ -76,9 +78,9 @@ CREATE TABLE IF NOT EXISTS lambda_metrics (
   lambda_metric_id       BIGSERIAL PRIMARY KEY,
   lambda_resource_id     BIGINT NOT NULL REFERENCES lambda_resources(lambda_resource_id) ON DELETE CASCADE,
   metric_date            DATE NOT NULL,
-  duration_p95_ms        DOUBLE PRECISION,
-  invocations_sum        DOUBLE PRECISION,
-  errors_sum             DOUBLE PRECISION,
+  duration_p95           float,
+  invocations            float,
+  errors                 float,
   UNIQUE (lambda_resource_id, metric_date)
 );
 
@@ -93,6 +95,7 @@ CREATE TABLE IF NOT EXISTS lambda_costs (
 );
 
 CREATE INDEX IF NOT EXISTS idx_lambda_resources_acct_region ON lambda_resources(account_id, region);
+CREATE INDEX IF NOT EXISTS idx_lambda_resources_profile     ON lambda_resources(profile_id);
 CREATE INDEX IF NOT EXISTS idx_lambda_metrics_date          ON lambda_metrics(metric_date);
 CREATE INDEX IF NOT EXISTS idx_lambda_costs_date            ON lambda_costs(usage_date);
 
@@ -101,6 +104,7 @@ CREATE INDEX IF NOT EXISTS idx_lambda_costs_date            ON lambda_costs(usag
 -- =========================
 CREATE TABLE IF NOT EXISTS rds_resources (
   rds_resource_id BIGSERIAL PRIMARY KEY,
+  profile_id      BIGINT NOT NULL REFERENCES user_profiles(profile_id),
   account_id      VARCHAR(12) NOT NULL,
   region          TEXT NOT NULL,
   db_identifier   TEXT NOT NULL,
@@ -115,9 +119,15 @@ CREATE TABLE IF NOT EXISTS rds_metrics (
   rds_metric_id         BIGSERIAL PRIMARY KEY,
   rds_resource_id       BIGINT NOT NULL REFERENCES rds_resources(rds_resource_id) ON DELETE CASCADE,
   metric_date           DATE NOT NULL,
-  cpu_p95               DOUBLE PRECISION,
-  db_conn_avg           DOUBLE PRECISION,
-  free_storage_gb_min   DOUBLE PRECISION,
+  cpu_utilization       float,
+  database_connections  float,
+  freeable_memory       float,
+  free_storage_space    float,
+  disk_queue_depth      float,
+  ebs_byte_balance_pct  float,
+  ebs_io_balance_pct    float,
+  cpu_credit_balance    float,
+  cpu_credit_usage      float,
   UNIQUE (rds_resource_id, metric_date)
 );
 
@@ -132,6 +142,7 @@ CREATE TABLE IF NOT EXISTS rds_costs (
 );
 
 CREATE INDEX IF NOT EXISTS idx_rds_resources_acct_region ON rds_resources(account_id, region);
+CREATE INDEX IF NOT EXISTS idx_rds_resources_profile     ON rds_resources(profile_id);
 CREATE INDEX IF NOT EXISTS idx_rds_metrics_date          ON rds_metrics(metric_date);
 CREATE INDEX IF NOT EXISTS idx_rds_costs_date            ON rds_costs(usage_date);
 
@@ -140,6 +151,7 @@ CREATE INDEX IF NOT EXISTS idx_rds_costs_date            ON rds_costs(usage_date
 -- =========================
 CREATE TABLE IF NOT EXISTS s3_resources (
   s3_resource_id BIGSERIAL PRIMARY KEY,
+  profile_id     BIGINT NOT NULL REFERENCES user_profiles(profile_id),
   account_id     VARCHAR(12) NOT NULL,
   region         TEXT NOT NULL,
   bucket_name    TEXT NOT NULL,
@@ -150,8 +162,12 @@ CREATE TABLE IF NOT EXISTS s3_metrics (
   s3_metric_id        BIGSERIAL PRIMARY KEY,
   s3_resource_id      BIGINT NOT NULL REFERENCES s3_resources(s3_resource_id) ON DELETE CASCADE,
   metric_date         DATE NOT NULL,
-  storage_gb_avg      DOUBLE PRECISION,
-  number_of_objects   DOUBLE PRECISION,
+  bucket_size_bytes   float,
+  number_of_objects   float,
+  get_requests        float,
+  put_requests        float,
+  bytes_downloaded    float,
+  bytes_uploaded      float,
   UNIQUE (s3_resource_id, metric_date)
 );
 
@@ -166,19 +182,62 @@ CREATE TABLE IF NOT EXISTS s3_costs (
 );
 
 CREATE INDEX IF NOT EXISTS idx_s3_resources_acct_region ON s3_resources(account_id, region);
+CREATE INDEX IF NOT EXISTS idx_s3_resources_profile     ON s3_resources(profile_id);
 CREATE INDEX IF NOT EXISTS idx_s3_metrics_date          ON s3_metrics(metric_date);
 CREATE INDEX IF NOT EXISTS idx_s3_costs_date            ON s3_costs(usage_date);
+
+-- =========================
+-- 5) ALB (Application Load Balancer)
+-- =========================
+CREATE TABLE IF NOT EXISTS alb_resources (
+  alb_resource_id BIGSERIAL PRIMARY KEY,
+  profile_id      BIGINT NOT NULL REFERENCES user_profiles(profile_id),
+  account_id      VARCHAR(12) NOT NULL,
+  region          TEXT NOT NULL,
+  lb_name         TEXT NOT NULL,
+  lb_arn          TEXT,
+  dns_name        TEXT,
+  scheme          TEXT,
+  UNIQUE (account_id, region, lb_name)
+);
+
+CREATE TABLE IF NOT EXISTS alb_metrics (
+  alb_metric_id         BIGSERIAL PRIMARY KEY,
+  alb_resource_id       BIGINT NOT NULL REFERENCES alb_resources(alb_resource_id) ON DELETE CASCADE,
+  metric_date           DATE NOT NULL,
+  request_count         float,
+  response_time_p95     float,
+  http_5xx_count        float,
+  active_conn_count     float,
+  UNIQUE (alb_resource_id, metric_date)
+);
+
+CREATE TABLE IF NOT EXISTS alb_costs (
+  alb_cost_id      BIGSERIAL PRIMARY KEY,
+  alb_resource_id  BIGINT NOT NULL REFERENCES alb_resources(alb_resource_id) ON DELETE CASCADE,
+  usage_date       DATE NOT NULL,
+  usage_type       TEXT NOT NULL DEFAULT 'total',
+  amount_usd       NUMERIC(14,6) NOT NULL DEFAULT 0,
+  currency_src     TEXT NOT NULL DEFAULT 'USD',
+  UNIQUE (alb_resource_id, usage_date, usage_type)
+);
+
+CREATE INDEX IF NOT EXISTS idx_alb_resources_acct_region ON alb_resources(account_id, region);
+CREATE INDEX IF NOT EXISTS idx_alb_resources_profile     ON alb_resources(profile_id);
+CREATE INDEX IF NOT EXISTS idx_alb_metrics_date          ON alb_metrics(metric_date);
+CREATE INDEX IF NOT EXISTS idx_alb_costs_date            ON alb_costs(usage_date);
 
 -- =========================
 -- Recommendations (Generic)
 -- =========================
 CREATE TABLE IF NOT EXISTS recommendations (
   rec_id          BIGSERIAL PRIMARY KEY,
+  profile_id      BIGINT NOT NULL REFERENCES user_profiles(profile_id),
   rec_date        DATE NOT NULL,
   account_id      VARCHAR(12) NOT NULL,
   region          TEXT NOT NULL,
-  service         TEXT NOT NULL,         -- EC2/Lambda/RDS/S3/DataTransfer
-  resource_key    TEXT NOT NULL,         -- instance_id / function_name / db_identifier / bucket_name / etc.
+  service         TEXT NOT NULL,         -- EC2/Lambda/RDS/S3/ALB/DataTransfer
+  resource_key    TEXT NOT NULL,         -- instance_id / function_name / db_identifier / bucket_name / lb_name
   rec_type        TEXT NOT NULL,         -- เช่น EC2_RIGHTSIZE_P95_LOW
   details         JSONB NOT NULL DEFAULT '{}'::jsonb,
   est_saving_usd  NUMERIC(14,6),
@@ -191,3 +250,40 @@ CREATE INDEX IF NOT EXISTS idx_recs_date     ON recommendations(rec_date);
 CREATE INDEX IF NOT EXISTS idx_recs_service  ON recommendations(service);
 CREATE INDEX IF NOT EXISTS idx_recs_status   ON recommendations(status);
 CREATE INDEX IF NOT EXISTS idx_recs_acct_reg ON recommendations(account_id, region);
+CREATE INDEX IF NOT EXISTS idx_recs_profile  ON recommendations(profile_id);
+
+-- =========================
+-- Forecast Runs (Baseline)
+-- =========================
+CREATE TABLE IF NOT EXISTS forecast_runs (
+  run_id          BIGSERIAL PRIMARY KEY,
+  profile_id      BIGINT NOT NULL REFERENCES user_profiles(profile_id),
+  service         TEXT NOT NULL,           -- ec2 / rds / lambda / s3 / alb
+  resource_id     BIGINT NOT NULL,         -- e.g. ec2_resource_id
+  metric          TEXT NOT NULL,           -- e.g. cpu_utilization
+  method          TEXT NOT NULL,           -- naive / moving_average / seasonal_naive
+  params          JSONB NOT NULL DEFAULT '{}'::jsonb,  -- {"window": 7, "season_length": 7}
+  horizon         INTEGER NOT NULL,
+  train_size      INTEGER,                 -- จำนวน data points ที่ใช้ train
+  mae             DOUBLE PRECISION,
+  rmse            DOUBLE PRECISION,
+  mape            DOUBLE PRECISION,
+  created_at      TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_forecast_runs_profile  ON forecast_runs(profile_id);
+CREATE INDEX IF NOT EXISTS idx_forecast_runs_service  ON forecast_runs(service, resource_id, metric);
+CREATE INDEX IF NOT EXISTS idx_forecast_runs_created  ON forecast_runs(created_at);
+
+-- =========================
+-- Forecast Values
+-- =========================
+CREATE TABLE IF NOT EXISTS forecast_values (
+  value_id        BIGSERIAL PRIMARY KEY,
+  run_id          BIGINT NOT NULL REFERENCES forecast_runs(run_id) ON DELETE CASCADE,
+  forecast_date   DATE NOT NULL,
+  forecast_value  DOUBLE PRECISION NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_forecast_values_run    ON forecast_values(run_id);
+CREATE INDEX IF NOT EXISTS idx_forecast_values_date   ON forecast_values(forecast_date);

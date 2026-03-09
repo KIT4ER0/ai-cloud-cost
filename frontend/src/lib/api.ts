@@ -1,85 +1,66 @@
-const BASE_URL = 'http://localhost:8000';
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
-export class ApiError extends Error {
-    constructor(public status: number, message: string) {
-        super(message);
-        this.name = 'ApiError';
-    }
-}
+const getHeaders = () => {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  const token = localStorage.getItem("token");
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+  return headers;
+};
 
-async function handleResponse<T>(response: Response): Promise<T> {
-    if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new ApiError(response.status, errorData.detail || 'An error occurred');
+const request = {
+  get: async (endpoint: string) => {
+    const res = await fetch(`${API_URL}${endpoint}`, { headers: getHeaders() });
+    if (!res.ok) {
+      let errStr = `API Error: ${res.statusText}`;
+      try {
+        const errData = await res.json();
+        if (errData.detail) errStr = typeof errData.detail === "string" ? errData.detail : JSON.stringify(errData.detail);
+      } catch (e) { }
+      throw new Error(errStr);
     }
-    return response.json();
-}
-
-function authHeaders(): Record<string, string> {
-    const token = localStorage.getItem('token');
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
+    return res.json();
+  },
+  post: async (endpoint: string, body?: any) => {
+    const options: RequestInit = {
+      method: "POST",
+      headers: getHeaders(),
+    };
+    if (body) {
+      options.body = JSON.stringify(body);
     }
-    return headers;
-}
+    const res = await fetch(`${API_URL}${endpoint}`, options);
+    if (!res.ok) {
+      let errStr = `API Error: ${res.statusText}`;
+      try {
+        const errData = await res.json();
+        if (errData.detail) errStr = typeof errData.detail === "string" ? errData.detail : JSON.stringify(errData.detail);
+      } catch (e) { }
+      throw new Error(errStr);
+    }
+    return res.json();
+  },
+};
 
 export const api = {
-    auth: {
-        register: async (data: any) => {
-            const response = await fetch(`${BASE_URL}/register`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(data),
-            });
-            return handleResponse<any>(response);
-        },
-        login: async (data: any) => {
-            const response = await fetch(`${BASE_URL}/login`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(data),
-            });
-            return handleResponse<any>(response);
-        }
-    },
-    monitoring: {
-        getResources: async (service: string) => {
-            const response = await fetch(`${BASE_URL}/api/monitoring/${service.toLowerCase()}`, {
-                headers: authHeaders(),
-            });
-            return handleResponse<any[]>(response);
-        },
-        getMetrics: async (service: string, resourceId: number) => {
-            const response = await fetch(`${BASE_URL}/api/monitoring/${service.toLowerCase()}/${resourceId}/metrics`, {
-                headers: authHeaders(),
-            });
-            return handleResponse<any[]>(response);
-        },
-    },
-    costs: {
-        getAnalysis: async (timeRange: string) => {
-            const response = await fetch(`${BASE_URL}/api/costs/analysis?time_range=${timeRange}`, {
-                headers: authHeaders(),
-            });
-            return handleResponse<any>(response);
-        }
-    },
-    aws: {
-        generateExternalId: async () => {
-            const response = await fetch(`${BASE_URL}/api/aws/generate-external-id`, {
-                method: 'POST',
-                headers: authHeaders(),
-            });
-            return handleResponse<{ external_id: string; account_id: number }>(response);
-        },
-        connect: async (data: { role_arn: string; session_name?: string }) => {
-            const response = await fetch(`${BASE_URL}/api/aws/connect`, {
-                method: 'POST',
-                headers: authHeaders(),
-                body: JSON.stringify(data),
-            });
-            return handleResponse<{ aws_account_id: string; arn: string; status: string }>(response);
-        },
-    },
+  ...request,
+  auth: {
+    me: () => request.get("/me"),
+  },
+  aws: {
+    generateExternalId: () => request.post("/api/aws/generate-external-id"),
+    connect: (data: any) => request.post("/api/aws/connect", data),
+  },
+  costs: {
+    getAnalysis: (timeRange: string) => request.get(`/api/costs/analysis?time_range=${timeRange}`),
+  },
+  monitoring: {
+    getResources: (service: string) => request.get(`/api/monitoring/${service.toLowerCase()}`),
+    getMetrics: (service: string, resourceId: number) => request.get(`/api/monitoring/${service.toLowerCase()}/${resourceId}/metrics`),
+  },
+  sync: {
+    costs: () => request.post("/sync/cost"),
+    metrics: () => request.post("/sync/metrics"),
+  },
 };
