@@ -8,7 +8,7 @@ from sqlalchemy import text
 
 # App imports
 from .. import models, database
-from .aws import boto_client, get_account_id
+from .aws_sts import boto_client, get_account_id
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +20,7 @@ def _upsert_resource(db: Session, model_cls, unique_filters: Dict, defaults: Dic
     """
     Get existing resource ID or create new one.
     Returns the primary key ID.
+    Note: unique_filters should include profile_id.
     """
     obj = db.query(model_cls).filter_by(**unique_filters).first()
     if obj:
@@ -57,182 +58,249 @@ def _bulk_upsert(db: Session, model_cls, rows: List[Dict], index_elements: List[
     db.commit()
 
 # ==============================================================================
-# 1. AWS Cost Explorer Sync
+# 1. AWS Cost & Usage Report (CUR via Athena) Sync
 # ==============================================================================
 
-def sync_aws_costs(days_back: int = 90):
+def sync_aws_costs(profile_id: int, days_back: int = 90):
     """
-    Fetch daily costs (Grouped by SERVICE, USAGE_TYPE) and upsert to DB.
-    Since CE doesn't give Resource IDs for daily granularity easily, 
-    we link to a dummy 'AGGREGATED' resource per service/region.
+    Fetch daily costs via Athena querying the CUR and upsert to DB.
     """
     db = database.SessionLocal()
-    logger.info(f"🚀 Starting AWS Cost Explorer Sync (Days Back: {days_back})...")
+    logger.info(f"🚀 Starting AWS CUR Sync (Days Back: {days_back})...")
     try:
-        ce = boto_client("ce")
+        # Load necessary AWS Clients
+        athena_client = boto_client("athena")
+        s3_client = boto_client("s3")
+        account_id = get_account_id()
+        region = s3_client.meta.region_name or "us-east-1"
+        
         end_date = date.today()
         start_date = end_date - timedelta(days=days_back)
-        logger.info(f"📅 Fetching cost data from {start_date} to {end_date}")
+        start_date_str = str(start_date)
+        end_date_str = str(end_date)
         
-        # We process in chunks of time if needed, but for simplicity let's do 1 call per granularity
-        # Note: CE is expensive if called too often.
+        from .cur_service import query_athena_cur_data
         
-        # 1. Fetch Data
-        results = []
-        next_token = None
-        
-        while True:
-            params = {
-                "TimePeriod": {"Start": str(start_date), "End": str(end_date)},
-                "Granularity": "DAILY",
-                "Metrics": ["UnblendedCost"],
-                "GroupBy": [
-                    {"Type": "DIMENSION", "Key": "SERVICE"},
-                    {"Type": "DIMENSION", "Key": "USAGE_TYPE"},
-                    # {"Type": "DIMENSION", "Key": "REGION"} # Optional: might make result too big, but better for accuracy
-                ]
-            }
-            if next_token:
-                params["NextPageToken"] = next_token
-                
-            resp = ce.get_cost_and_usage(**params)
-            results.extend(resp.get("ResultsByTime", []))
-            next_token = resp.get("NextPageToken")
-            if not next_token:
-                break
-        
-        # 2. Process Results
-        account_id = get_account_id()
+        # 1. Fetch Data from Athena CUR
+        results = query_athena_cur_data(athena_client, start_date_str, end_date_str)
         
         # Buffers for bulk insert
         ec2_costs = []
+        alb_costs = []
         s3_costs = []
         rds_costs = []
         lambda_costs = []
         
-        # Cache for Resource IDs: {(Service, Region): ResourceID}
-        # We assume Region='global' if not specified in CE (CE doesn't return Region in GroupBy unless requested)
-        # To simplify, we'll assume a default region for aggregated costs or "us-east-1"
-        default_region = "us-east-1" 
-        
+        # Cache for Resource IDs: {(service_model, resource_key): local_id}
         resource_cache = {}
 
-        for day_data in results:
-            usage_date = day_data["TimePeriod"]["Start"]
-            for group in day_data["Groups"]:
-                # keys: [Service, UsageType]
-                service_name = group["Keys"][0]
-                usage_type = group["Keys"][1]
-                amount = float(group["Metrics"]["UnblendedCost"]["Amount"])
-                
-                if amount == 0:
-                    continue
+        for row in results:
+            usage_date = row["usage_date"]
+            service_name = row["service_name"]
+            usage_type = row["usage_type"]
+            resource_id_raw = row["resource_id"]
+            amount = row["cost"]
+            
+            if amount == 0:
+                continue
 
-                # Map Service Name to our Tables
-                if service_name in ("Amazon Elastic Compute Cloud - Compute", "EC2 - Other"):
+            # Default models
+            model_res = None
+            model_cost = None
+            res_key_field = None
+            target_list = None
+            
+            # Map Service Name and Usage Type to our Tables
+            if service_name == "AmazonEC2":
+                if 'LoadBalancer' in usage_type or 'LCU' in usage_type:
+                    target_list = alb_costs
+                    model_res = models.ALBResource
+                    model_cost = models.ALBCost
+                    res_key_field = "lb_name" 
+                    # Extract LB Name from ARN (approximate)
+                    resource_key = resource_id_raw.split('/')[-1] if '/' in resource_id_raw else resource_id_raw
+                else: 
+                     # This will catch BoxUsage, EBS, and DataTransfer
                     target_list = ec2_costs
                     model_res = models.EC2Resource
                     model_cost = models.EC2Cost
                     res_key_field = "instance_id"
-                elif service_name == "Amazon Simple Storage Service":
-                    target_list = s3_costs
-                    model_res = models.S3Resource
-                    model_cost = models.S3Cost
-                    res_key_field = "bucket_name"
-                elif service_name == "Amazon Relational Database Service":
-                    target_list = rds_costs
-                    model_res = models.RDSResource
-                    model_cost = models.RDSCost
-                    res_key_field = "db_identifier"
-                elif service_name == "AWS Lambda":
-                    target_list = lambda_costs
-                    model_res = models.LambdaResource
-                    model_cost = models.LambdaCost
-                    res_key_field = "function_name"
-                else:
-                    continue # Skip other services for now
+                    # EC2 instances usually start with 'i-', Volumes with 'vol-'
+                    # For Data Transfer, it might be an instance ID or aggregated.
+                    resource_key = resource_id_raw
+                    
+            elif service_name == "AWSELB":
+                 # Classic ELB
+                 target_list = alb_costs
+                 model_res = models.ALBResource
+                 model_cost = models.ALBCost
+                 res_key_field = "lb_name"
+                 resource_key = resource_id_raw.split('/')[-1] if '/' in resource_id_raw else resource_id_raw
+                 
+            elif service_name == "AmazonS3":
+                target_list = s3_costs
+                model_res = models.S3Resource
+                model_cost = models.S3Cost
+                res_key_field = "bucket_name"
+                resource_key = resource_id_raw
+                
+            elif service_name == "AmazonRDS":
+                target_list = rds_costs
+                model_res = models.RDSResource
+                model_cost = models.RDSCost
+                res_key_field = "db_identifier"
+                # RDS ARNs end with the DB identifier
+                resource_key = resource_id_raw.split(':')[-1] if ':' in resource_id_raw else resource_id_raw
+                
+            elif service_name == "AWSLambda":
+                target_list = lambda_costs
+                model_res = models.LambdaResource
+                model_cost = models.LambdaCost
+                res_key_field = "function_name"
+                # Lambda ARNs end with the function name
+                resource_key = resource_id_raw.split(':')[-1] if ':' in resource_id_raw else resource_id_raw
+                
+            else:
+                continue # Skip unmapped services
 
-                # Get Aggregated Resource ID
-                cache_key = (service_name, default_region)
-                if cache_key not in resource_cache:
-                    # Upsert "AGGREGATED" resource
-                    filters = {
-                        "account_id": account_id,
-                        "region": default_region,
-                        res_key_field: "AGGREGATED"
-                    }
-                    defaults = {"state": "active"} if model_res == models.EC2Resource else {}
-                    rid = _upsert_resource(db, model_res, filters, defaults)
-                    resource_cache[cache_key] = rid
+            if not model_res: continue
+            
+            # 2. Get or Create Resource ID in local DB
+            cache_key = (model_res.__name__, resource_key)
+            if cache_key not in resource_cache:
+                filters = {
+                    "profile_id": profile_id,
+                    "account_id": account_id,
+                    "region": region,
+                    res_key_field: resource_key
+                }
                 
-                rid = resource_cache[cache_key]
+                # Add default states for models that need them
+                defaults = {}
+                if model_res == models.EC2Resource: defaults["state"] = "active"
                 
-                # Add Cost Row
-                # Mapping: ec2_resource_id / s3_resource_id ...
-                fk_field = f"{model_res.__tablename__[:-1]}_id"
-                
-                target_list.append({
-                    fk_field: rid,
-                    "usage_date": usage_date,
-                    "usage_type": usage_type,
-                    "amount_usd": amount,
-                    "currency_src": "USD"
-                })
+                local_rid = _upsert_resource(db, model_res, filters, defaults)
+                resource_cache[cache_key] = local_rid
+            
+            local_rid = resource_cache[cache_key]
+            
+            # 3. Add Cost Row
+            fk_field = f"{model_res.__tablename__[:-1]}_id"
+            target_list.append({
+                fk_field: local_rid,
+                "usage_date": usage_date,
+                "usage_type": usage_type,
+                "amount_usd": amount,
+                "currency_src": "USD"
+            })
         
-        # 3. Bulk Insert
+        # 4. Bulk Insert
         if ec2_costs:
             _bulk_upsert(db, models.EC2Cost, ec2_costs, ["ec2_resource_id", "usage_date", "usage_type"])
+            logger.info(f" -> Upserted {len(ec2_costs)} EC2 cost rows")
         if s3_costs:
             _bulk_upsert(db, models.S3Cost, s3_costs, ["s3_resource_id", "usage_date", "usage_type"])
+            logger.info(f" -> Upserted {len(s3_costs)} S3 cost rows")
         if rds_costs:
             _bulk_upsert(db, models.RDSCost, rds_costs, ["rds_resource_id", "usage_date", "usage_type"])
+            logger.info(f" -> Upserted {len(rds_costs)} RDS cost rows")
         if lambda_costs:
             _bulk_upsert(db, models.LambdaCost, lambda_costs, ["lambda_resource_id", "usage_date", "usage_type"])
+            logger.info(f" -> Upserted {len(lambda_costs)} Lambda cost rows")
+        if alb_costs:
+            _bulk_upsert(db, models.ALBCost, alb_costs, ["alb_resource_id", "usage_date", "usage_type"])
+            logger.info(f" -> Upserted {len(alb_costs)} ALB cost rows")
             
-        logger.info(f" synced costs for {len(results)} days.")
+        logger.info(f"✅ Successfully synced CUR data from Athena for {start_date_str} to {end_date_str}")
         
     except Exception as e:
-        logger.error(f"Error syncing costs: {e}")
+        logger.error(f"Error syncing costs through Athena CUR: {e}")
         raise
     finally:
         db.close()
+
 
 # ==============================================================================
 # 2. AWS CloudWatch Metrics Sync
 # ==============================================================================
 
-def sync_aws_metrics(hours_back: int = 24):
+def sync_aws_metrics(profile_id: int, hours_back: int = 24):
     """
-    Fetch CloudWatch metrics for EC2, RDS, S3, Lambda.
-    Upserts real Resource records and then Metrics.
+    Fetch CloudWatch metrics for EC2, RDS, S3, Lambda, ALB.
+    Upserts real Resource records and then Metrics using AssumeRole.
     """
     db = database.SessionLocal()
-    cw = boto_client("cloudwatch")
-    account_id = get_account_id()
-    region = boto_client("s3").meta.region_name or "us-east-1" # Hack to get region
-    
-    
-    end_time = datetime.utcnow()
-    start_time = end_time - timedelta(hours=hours_back)
-    
-    logger.info(f"🚀 Starting AWS CloudWatch Metrics Sync (Hours Back: {hours_back})...")
-    logger.info(f"⏰ Fetching metrics from {start_time} to {end_time} for region: {region}")
-    
     try:
+        user = db.query(models.UserProfile).filter_by(profile_id=profile_id).first()
+        if not user or not user.aws_role_arn:
+            logger.error(f"Cannot sync metrics: User {profile_id} has no aws_role_arn configured")
+            return
+
+        from .aws_sts import get_assumed_session
+        session = get_assumed_session(
+            role_arn=user.aws_role_arn,
+            session_name=f"sync-metrics-{profile_id}",
+            external_id=user.aws_external_id,
+        )
+
+        from .metrics_ec2 import smart_sync_ec2_metrics
+        from .metrics_rds import pull_rds_metrics, save_rds_metrics
+        from .metrics_lambda import pull_lambda_metrics, save_lambda_metrics
+        from .metrics_s3 import pull_s3_metrics, save_s3_metrics
+        from .metrics_alb import pull_alb_metrics, save_alb_metrics
+        # Hack to get region from local boto3
+        region = boto_client("s3").meta.region_name or "us-east-1"
+        account_id = get_account_id()
+
+        logger.info(f"🚀 Starting AWS CloudWatch Metrics Sync for Profile {profile_id}...")
+        
         # --- EC2 ---
         logger.info("  -> Syncing EC2 Metrics...")
-        _sync_ec2_metrics(db, cw, account_id, region, start_time, end_time)
+        smart_sync_ec2_metrics(
+            customer_session=session,
+            account_id=account_id,
+            region=region,
+            profile_id=profile_id
+        )
         logger.info("  ✅ EC2 Metrics Synced!")
-        
-        # --- S3 (List buckets from env or generic) ---
-        # For demo simplicity, skipping listing all buckets unless we call S3 ListBuckets
-        # _sync_s3_metrics(...)
-        
+
         # --- RDS ---
-        # _sync_rds_metrics(...)
-        
+        try:
+            logger.info("  -> Syncing RDS Metrics...")
+            rds_results = pull_rds_metrics(customer_session=session, region=region)
+            save_rds_metrics(rds_results, account_id=account_id, region=region, profile_id=profile_id)
+            logger.info(f"  ✅ RDS Metrics Synced! ({len(rds_results)} instances)")
+        except Exception as e:
+            logger.warning(f"  ⚠️ RDS Metrics sync skipped: {e}")
+
         # --- Lambda ---
-        # _sync_lambda_metrics(...)
+        try:
+            logger.info("  -> Syncing Lambda Metrics...")
+            lambda_results = pull_lambda_metrics(customer_session=session, region=region)
+            save_lambda_metrics(lambda_results, account_id=account_id, region=region, profile_id=profile_id)
+            logger.info(f"  ✅ Lambda Metrics Synced! ({len(lambda_results)} functions)")
+        except Exception as e:
+            logger.warning(f"  ⚠️ Lambda Metrics sync skipped: {e}")
+
+        # --- S3 ---
+        try:
+            logger.info("  -> Syncing S3 Metrics...")
+            s3_results = pull_s3_metrics(customer_session=session, region=region)
+            save_s3_metrics(s3_results, account_id=account_id, region=region, profile_id=profile_id)
+            logger.info(f"  ✅ S3 Metrics Synced! ({len(s3_results)} buckets)")
+        except Exception as e:
+            logger.warning(f"  ⚠️ S3 Metrics sync skipped: {e}")
+
+        # --- ALB ---
+        try:
+            logger.info("  -> Syncing ALB Metrics...")
+            alb_results = pull_alb_metrics(customer_session=session, region=region)
+            save_alb_metrics(alb_results, account_id=account_id, region=region, profile_id=profile_id)
+            logger.info(f"  ✅ ALB Metrics Synced! ({len(alb_results)} load balancers)")
+        except Exception as e:
+            logger.warning(f"  ⚠️ ALB Metrics sync skipped: {e}")
+
+        logger.info(f"🎉 All metrics synced for Profile {profile_id}!")
         
     except Exception as e:
         logger.error(f"Error syncing metrics: {e}")
@@ -240,7 +308,7 @@ def sync_aws_metrics(hours_back: int = 24):
     finally:
         db.close()
 
-def _sync_ec2_metrics(db: Session, cw, account_id, region, start_time, end_time):
+def _sync_ec2_metrics(db: Session, cw, account_id, region, start_time, end_time, profile_id: int):
     # 1. List Instances (Real world: use EC2 DescribeInstances)
     ec2_client = boto_client("ec2")
     instances = []
@@ -261,7 +329,7 @@ def _sync_ec2_metrics(db: Session, cw, account_id, region, start_time, end_time)
         pk = _upsert_resource(
             db, 
             models.EC2Resource, 
-            {"account_id": account_id, "region": region, "instance_id": inst['id']},
+            {"profile_id": profile_id, "account_id": account_id, "region": region, "instance_id": inst['id']},
             {"instance_type": inst['type'], "state": inst['state']}
         )
         
@@ -289,7 +357,7 @@ def _sync_ec2_metrics(db: Session, cw, account_id, region, start_time, end_time)
             metric_rows.append({
                 "ec2_resource_id": pk,
                 "metric_date": d_key,
-                "cpu_p95": max_val,
+                "cpu_utilization": max_val,
             })
     if metric_rows:
         _bulk_upsert(db, models.EC2Metric, metric_rows, ["ec2_resource_id", "metric_date"])

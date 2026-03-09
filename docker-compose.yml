@@ -40,7 +40,12 @@ services:
       - "8000:8000"
     environment:
       - PYTHONUNBUFFERED=1
-      - DATABASE_URL=postgresql+psycopg2://ai_user:ai_password@db:5432/ai_cost
+      - DB_USER=postgres.gedvftitzptqvyuntgvh
+      - DB_PASSWORD=Fxig08xuluj
+      - DB_HOST=aws-1-ap-northeast-1.pooler.supabase.com
+      - DB_PORT=6543
+      - DB_NAME=postgres
+      - SUPABASE_URL=https://gedvftitzptqvyuntgvh.supabase.co
     env_file:
       - ./backend/.env
     depends_on:

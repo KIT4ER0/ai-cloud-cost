@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import func, desc
+from sqlalchemy import func, desc, and_
 from datetime import datetime, timedelta, date
 from typing import List, Dict, Any
 import calendar
@@ -51,26 +51,30 @@ def get_date_range(time_range: str):
 @router.get("/analysis", response_model=schemas.CostAnalysisData)
 def get_cost_analysis(
     time_range: str = Query("this_month", enum=["this_month", "last_month", "last_6_months", "this_year"]),
+    current_user: models.UserProfile = Depends(auth.get_current_user),
     db: Session = Depends(database.get_db)
 ):
     start_date, end_date, prev_start, prev_end = get_date_range(time_range)
 
-    # Helper to query cost tables
-    def query_service_costs(model, start, end):
+    # Helper to query cost tables, filtered by profile_id through resource JOIN
+    def query_service_costs(cost_model, resource_model, fk_col, start, end):
         return db.query(
-            model.usage_date,
-            func.sum(model.amount_usd).label("cost")
+            cost_model.usage_date,
+            func.sum(cost_model.amount_usd).label("cost")
+        ).join(
+            resource_model, fk_col == getattr(resource_model, resource_model.__tablename__[:-1] + "_id")
         ).filter(
-            model.usage_date >= start,
-            model.usage_date <= end
-        ).group_by(model.usage_date).all()
+            resource_model.profile_id == current_user.profile_id,
+            cost_model.usage_date >= start,
+            cost_model.usage_date <= end
+        ).group_by(cost_model.usage_date).all()
 
-    # Query all services
+    # Query all services (cost_model, resource_model, fk_column)
     services_map = {
-        "EC2": models.EC2Cost,
-        "Lambda": models.LambdaCost,
-        "RDS": models.RDSCost,
-        "S3": models.S3Cost
+        "EC2": (models.EC2Cost, models.EC2Resource, models.EC2Cost.ec2_resource_id),
+        "Lambda": (models.LambdaCost, models.LambdaResource, models.LambdaCost.lambda_resource_id),
+        "RDS": (models.RDSCost, models.RDSResource, models.RDSCost.rds_resource_id),
+        "S3": (models.S3Cost, models.S3Resource, models.S3Cost.s3_resource_id),
     }
 
     # Data structures for aggregation
@@ -80,8 +84,8 @@ def get_cost_analysis(
     total_cost = 0.0
     
     # 1. Current Period Data
-    for service_name, model in services_map.items():
-        rows = query_service_costs(model, start_date, end_date)
+    for service_name, (cost_model, resource_model, fk_col) in services_map.items():
+        rows = query_service_costs(cost_model, resource_model, fk_col, start_date, end_date)
         for r in rows:
             d_str = str(r.usage_date)
             val = float(r.cost or 0)
@@ -91,10 +95,13 @@ def get_cost_analysis(
 
     # 2. Previous Period Data (for KPI comparison)
     prev_total_cost = 0.0
-    for service_name, model in services_map.items():
-        val = db.query(func.sum(model.amount_usd)).filter(
-            model.usage_date >= prev_start,
-            model.usage_date <= prev_end
+    for service_name, (cost_model, resource_model, fk_col) in services_map.items():
+        val = db.query(func.sum(cost_model.amount_usd)).join(
+            resource_model, fk_col == getattr(resource_model, resource_model.__tablename__[:-1] + "_id")
+        ).filter(
+            resource_model.profile_id == current_user.profile_id,
+            cost_model.usage_date >= prev_start,
+            cost_model.usage_date <= prev_end
         ).scalar() or 0.0
         prev_total_cost += float(val)
 
@@ -154,23 +161,29 @@ def get_cost_analysis(
 
     # 6. Cost Drivers (Breakdown by usage_type)
     drivers_data = {}
-    for service_name, model in services_map.items():
+    for service_name, (cost_model, resource_model, fk_col) in services_map.items():
         # Get top usage types by cost
         rows = db.query(
-            model.usage_type,
-            func.sum(model.amount_usd).label("cost")
+            cost_model.usage_type,
+            func.sum(cost_model.amount_usd).label("cost")
+        ).join(
+            resource_model, fk_col == getattr(resource_model, resource_model.__tablename__[:-1] + "_id")
         ).filter(
-            model.usage_date >= start_date,
-            model.usage_date <= end_date
-        ).group_by(model.usage_type).order_by(desc("cost")).limit(5).all()
+            resource_model.profile_id == current_user.profile_id,
+            cost_model.usage_date >= start_date,
+            cost_model.usage_date <= end_date
+        ).group_by(cost_model.usage_type).order_by(desc("cost")).limit(5).all()
 
         service_drivers = []
         for r in rows:
             # Get previous cost for this specific usage type
-            prev_val = db.query(func.sum(model.amount_usd)).filter(
-                model.usage_date >= prev_start,
-                model.usage_date <= prev_end,
-                model.usage_type == r.usage_type
+            prev_val = db.query(func.sum(cost_model.amount_usd)).join(
+                resource_model, fk_col == getattr(resource_model, resource_model.__tablename__[:-1] + "_id")
+            ).filter(
+                resource_model.profile_id == current_user.profile_id,
+                cost_model.usage_date >= prev_start,
+                cost_model.usage_date <= prev_end,
+                cost_model.usage_type == r.usage_type
             ).scalar() or 0.0
             
             cost = float(r.cost or 0)

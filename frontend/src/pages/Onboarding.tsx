@@ -11,6 +11,7 @@ import * as z from 'zod';
 import { useNavigate } from 'react-router-dom';
 import { api } from '@/lib/api';
 import { useAuthStore } from '@/store/useAuthStore';
+import { supabase } from '@/lib/supabase';
 
 // --- Step 1: Account Creation Schema ---
 const accountSchema = z.object({
@@ -45,11 +46,18 @@ export default function Onboarding() {
     const onAccountSubmit = async (data: AccountFormValues) => {
         try {
             setError("");
-            const response = await api.auth.register({ email: data.email, password: data.password });
+            const { data: authData, error: authError } = await supabase.auth.signUp({ 
+                email: data.email, 
+                password: data.password 
+            });
+            if (authError) throw authError;
+
             // Auto-login the user after registration
-            const token = response.access_token;
+            const token = authData.session?.access_token;
             if (token) {
                 localStorage.setItem('token', token);
+            } else if (authData.user) {
+                console.log("Registered without immediate session. May require email verification.");
             }
 
             // Generate external ID from backend

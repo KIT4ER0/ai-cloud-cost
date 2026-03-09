@@ -1,6 +1,6 @@
-from database import SessionLocal, engine, Base
-import models
-import auth
+from backend.database import SessionLocal, engine, Base
+from backend import models
+from backend import auth
 from datetime import datetime, timedelta
 import random
 
@@ -14,14 +14,12 @@ def seed_data():
     
     # 1. Create User (Admin)
     admin_email = "admin@example.com"
-    if not db.query(models.User).filter(models.User.email == admin_email).first():
-        hashed_pw = auth.get_password_hash("admin123")
-        user = models.User(
+    if not db.query(models.UserProfile).filter(models.UserProfile.email == admin_email).first():
+        user = models.UserProfile(
             email=admin_email, 
-            password_hash=hashed_pw,
-            display_name="Administrator",
-            role="admin",
-            is_active=True
+            supabase_user_id="mock_admin",
+            aws_role_arn="arn:aws:iam::123456789012:role/MockRole",
+            aws_external_id="mock_ext_id"
         )
         db.add(user)
         print(f"Created admin user: {admin_email}")
@@ -40,6 +38,7 @@ def seed_data():
         curr = db.query(models.EC2Resource).filter_by(instance_id=inst["id"]).first()
         if not curr:
             curr = models.EC2Resource(
+                profile_id=1,
                 account_id="123456789012",
                 region="us-east-1",
                 instance_id=inst["id"],
@@ -59,8 +58,8 @@ def seed_data():
                 m = models.EC2Metric(
                     ec2_resource_id=curr.ec2_resource_id,
                     metric_date=d,
-                    cpu_p95=random.uniform(10, 90),
-                    network_out_gb_sum=inst["network"] * random.uniform(0.8, 1.2)
+                    cpu_utilization=random.uniform(10, 90),
+                    network_out=inst["network"] * random.uniform(0.8, 1.2)
                 )
                 db.add(m)
         
@@ -85,6 +84,7 @@ def seed_data():
         curr = db.query(models.S3Resource).filter_by(bucket_name=b).first()
         if not curr:
             curr = models.S3Resource(
+                profile_id=1,
                 account_id="123456789012",
                 region="us-east-1",
                 bucket_name=b
@@ -111,6 +111,7 @@ def seed_data():
     if db.query(models.Recommendation).count() == 0:
         recs = [
             models.Recommendation(
+                profile_id=1,
                 rec_date=datetime.utcnow().date(),
                 account_id="123456789012",
                 region="us-east-1",

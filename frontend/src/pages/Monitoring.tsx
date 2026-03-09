@@ -18,26 +18,35 @@ import { api } from "@/lib/api"
 // Service-specific monitoring chart configs
 const serviceMonitoringConfig = {
     EC2: [
-        { title: "CPU P95", subtitle: "utilization (%)", dataKey: "cpu_p95" },
-        { title: "Network Out", subtitle: "GB sum", dataKey: "network_out_gb_sum" },
+        { title: "CPU Utilization", subtitle: "P95 (%)", dataKey: "cpu_utilization" },
+        { title: "Network In", subtitle: "bytes (sum)", dataKey: "network_in" },
+        { title: "Network Out", subtitle: "bytes (sum)", dataKey: "network_out" },
+        { title: "CPU Credit Usage", subtitle: "credits", dataKey: "cpu_credit_usage" },
     ],
     Lambda: [
-        { title: "Duration P95", subtitle: "milliseconds", dataKey: "duration_p95_ms" },
-        { title: "Invocations", subtitle: "count", dataKey: "invocations_sum" },
-        { title: "Errors", subtitle: "count", dataKey: "errors_sum" },
+        { title: "Duration P95", subtitle: "milliseconds", dataKey: "duration_p95" },
+        { title: "Invocations", subtitle: "count (sum)", dataKey: "invocations" },
+        { title: "Errors", subtitle: "count (sum)", dataKey: "errors" },
     ],
     S3: [
-        { title: "Storage", subtitle: "GB avg", dataKey: "storage_gb_avg" },
+        { title: "Bucket Size", subtitle: "bytes", dataKey: "bucket_size_bytes" },
         { title: "Objects", subtitle: "count", dataKey: "number_of_objects" },
     ],
     RDS: [
-        { title: "CPU P95", subtitle: "percent", dataKey: "cpu_p95" },
-        { title: "DB Connections", subtitle: "avg", dataKey: "db_conn_avg" },
-        { title: "Free Storage", subtitle: "GB min", dataKey: "free_storage_gb_min" },
+        { title: "CPU Utilization", subtitle: "P95 (%)", dataKey: "cpu_utilization" },
+        { title: "DB Connections", subtitle: "count (max)", dataKey: "database_connections" },
+        { title: "Freeable Memory", subtitle: "bytes (min)", dataKey: "freeable_memory" },
+        { title: "Free Storage", subtitle: "bytes (min)", dataKey: "free_storage_space" },
+    ],
+    ALB: [
+        { title: "Request Count", subtitle: "count (sum)", dataKey: "request_count" },
+        { title: "Response Time", subtitle: "seconds (avg)", dataKey: "response_time_avg" },
+        { title: "HTTP 5xx", subtitle: "count (sum)", dataKey: "http_5xx_count" },
+        { title: "Active Connections", subtitle: "count (sum)", dataKey: "active_conn_count" },
     ],
 }
 
-const services = ["EC2", "Lambda", "S3", "RDS"] as const
+const services = ["EC2", "Lambda", "S3", "RDS", "ALB"] as const
 type ServiceType = typeof services[number]
 
 interface MonitoringChartProps {
@@ -205,6 +214,33 @@ function RDSTable({ resources, selectedId, onRowClick }: { resources: any[], sel
     )
 }
 
+function ALBTable({ resources, selectedId, onRowClick }: { resources: any[], selectedId: number | null, onRowClick: (id: number) => void }) {
+    return (
+        <Table>
+            <TableHeader>
+                <TableRow>
+                    <TableHead className="w-12"></TableHead>
+                    <TableHead>Load Balancer</TableHead>
+                    <TableHead>DNS Name</TableHead>
+                    <TableHead>Scheme</TableHead>
+                    <TableHead>Region</TableHead>
+                </TableRow>
+            </TableHeader>
+            <TableBody>
+                {resources.map((r) => (
+                    <TableRow key={r.alb_resource_id} className="cursor-pointer hover:bg-muted/50" onClick={() => onRowClick(r.alb_resource_id)}>
+                        <TableCell><Checkbox checked={selectedId === r.alb_resource_id} onCheckedChange={() => onRowClick(r.alb_resource_id)} /></TableCell>
+                        <TableCell className="font-medium">{r.lb_name}</TableCell>
+                        <TableCell className="font-mono text-sm truncate max-w-[200px]" title={r.dns_name || ""}>{r.dns_name || "-"}</TableCell>
+                        <TableCell>{r.scheme || "-"}</TableCell>
+                        <TableCell><Badge variant="outline" className="border-primary text-primary">{r.region}</Badge></TableCell>
+                    </TableRow>
+                ))}
+            </TableBody>
+        </Table>
+    )
+}
+
 export default function Monitoring() {
     const [selectedService, setSelectedService] = useState<ServiceType>("EC2")
     const [selectedResourceId, setSelectedResourceId] = useState<number | null>(null)
@@ -290,6 +326,8 @@ export default function Monitoring() {
                 return <S3Table resources={resources} selectedId={selectedResourceId} onRowClick={handleRowClick} />
             case "RDS":
                 return <RDSTable resources={resources} selectedId={selectedResourceId} onRowClick={handleRowClick} />
+            case "ALB":
+                return <ALBTable resources={resources} selectedId={selectedResourceId} onRowClick={handleRowClick} />
             default:
                 return null
         }

@@ -7,7 +7,8 @@ import {
     LineChart,
     Activity,
     Lightbulb,
-    LogOut
+    LogOut,
+    User
 } from "lucide-react"
 
 interface SidebarProps {
@@ -23,6 +24,7 @@ export function Sidebar({ className }: SidebarProps) {
         { name: "Monitoring", href: "/monitoring", icon: Activity },
         { name: "Forecast Cost", href: "/forecast-cost", icon: LineChart },
         { name: "Recommendations", href: "/recommend", icon: Lightbulb },
+        { name: "User Profile", href: "/profile", icon: User },
     ]
 
     return (
