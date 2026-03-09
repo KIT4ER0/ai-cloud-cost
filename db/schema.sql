@@ -251,3 +251,39 @@ CREATE INDEX IF NOT EXISTS idx_recs_service  ON recommendations(service);
 CREATE INDEX IF NOT EXISTS idx_recs_status   ON recommendations(status);
 CREATE INDEX IF NOT EXISTS idx_recs_acct_reg ON recommendations(account_id, region);
 CREATE INDEX IF NOT EXISTS idx_recs_profile  ON recommendations(profile_id);
+
+-- =========================
+-- Forecast Runs (Baseline)
+-- =========================
+CREATE TABLE IF NOT EXISTS forecast_runs (
+  run_id          BIGSERIAL PRIMARY KEY,
+  profile_id      BIGINT NOT NULL REFERENCES user_profiles(profile_id),
+  service         TEXT NOT NULL,           -- ec2 / rds / lambda / s3 / alb
+  resource_id     BIGINT NOT NULL,         -- e.g. ec2_resource_id
+  metric          TEXT NOT NULL,           -- e.g. cpu_utilization
+  method          TEXT NOT NULL,           -- naive / moving_average / seasonal_naive
+  params          JSONB NOT NULL DEFAULT '{}'::jsonb,  -- {"window": 7, "season_length": 7}
+  horizon         INTEGER NOT NULL,
+  train_size      INTEGER,                 -- จำนวน data points ที่ใช้ train
+  mae             DOUBLE PRECISION,
+  rmse            DOUBLE PRECISION,
+  mape            DOUBLE PRECISION,
+  created_at      TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_forecast_runs_profile  ON forecast_runs(profile_id);
+CREATE INDEX IF NOT EXISTS idx_forecast_runs_service  ON forecast_runs(service, resource_id, metric);
+CREATE INDEX IF NOT EXISTS idx_forecast_runs_created  ON forecast_runs(created_at);
+
+-- =========================
+-- Forecast Values
+-- =========================
+CREATE TABLE IF NOT EXISTS forecast_values (
+  value_id        BIGSERIAL PRIMARY KEY,
+  run_id          BIGINT NOT NULL REFERENCES forecast_runs(run_id) ON DELETE CASCADE,
+  forecast_date   DATE NOT NULL,
+  forecast_value  DOUBLE PRECISION NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_forecast_values_run    ON forecast_values(run_id);
+CREATE INDEX IF NOT EXISTS idx_forecast_values_date   ON forecast_values(forecast_date);

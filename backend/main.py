@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from . import database, models
 from .routers import auth, costs, monitoring, recommendations, system, aws, sync
+from .forecasting.router import router as forecast_router
 
 from sqlalchemy import text
 
@@ -29,6 +30,7 @@ app.include_router(monitoring.router)
 app.include_router(recommendations.router)
 app.include_router(system.router)
 app.include_router(sync.router)
+app.include_router(forecast_router)
 
 @app.get("/")
 def root():

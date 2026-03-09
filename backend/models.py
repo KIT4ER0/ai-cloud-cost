@@ -25,6 +25,7 @@ class UserProfile(Base):
     s3_resources = relationship("S3Resource", back_populates="profile", cascade="all, delete-orphan")
     alb_resources = relationship("ALBResource", back_populates="profile", cascade="all, delete-orphan")
     recommendations = relationship("Recommendation", back_populates="profile", cascade="all, delete-orphan")
+    forecast_runs = relationship("ForecastRun", back_populates="profile", cascade="all, delete-orphan")
 
 # =======================
 # 1) EC2
@@ -334,3 +335,39 @@ class Recommendation(Base):
     status = Column(Text, nullable=False, default='open', index=True)
 
     profile = relationship("UserProfile", back_populates="recommendations")
+
+# =======================
+# Forecast (Baseline)
+# =======================
+class ForecastRun(Base):
+    __tablename__ = "forecast_runs"
+    __table_args__ = {"schema": "cloudcost"}
+
+    run_id = Column(BigInteger, primary_key=True, autoincrement=True)
+    profile_id = Column(BigInteger, ForeignKey("cloudcost.user_profiles.profile_id"), nullable=False, index=True)
+    service = Column(Text, nullable=False)          # ec2 / rds / lambda / s3 / alb
+    resource_id = Column(BigInteger, nullable=False) # e.g. ec2_resource_id
+    metric = Column(Text, nullable=False)            # e.g. cpu_utilization
+    method = Column(Text, nullable=False)            # naive / moving_average / seasonal_naive
+    params = Column(JSONB, nullable=False, default={})
+    horizon = Column(Integer, nullable=False)
+    train_size = Column(Integer)
+    mae = Column(Float)
+    rmse = Column(Float)
+    mape = Column(Float)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    values = relationship("ForecastValue", back_populates="run", cascade="all, delete-orphan")
+    profile = relationship("UserProfile", back_populates="forecast_runs")
+
+
+class ForecastValue(Base):
+    __tablename__ = "forecast_values"
+    __table_args__ = {"schema": "cloudcost"}
+
+    value_id = Column(BigInteger, primary_key=True, autoincrement=True)
+    run_id = Column(BigInteger, ForeignKey("cloudcost.forecast_runs.run_id", ondelete="CASCADE"), nullable=False, index=True)
+    forecast_date = Column(Date, nullable=False, index=True)
+    forecast_value = Column(Float, nullable=False)
+
+    run = relationship("ForecastRun", back_populates="values")

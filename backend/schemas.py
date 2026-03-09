@@ -221,3 +221,30 @@ class AwsAccountOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+# =======================
+# Forecast
+# =======================
+class ForecastValueOut(BaseModel):
+    forecast_date: date
+    forecast_value: float
+    class Config:
+        from_attributes = True
+
+class ForecastRunOut(BaseModel):
+    run_id: int
+    profile_id: int
+    service: str
+    resource_id: int
+    metric: str
+    method: str
+    params: Dict[str, Any]
+    horizon: int
+    train_size: Optional[int] = None
+    mae: Optional[float] = None
+    rmse: Optional[float] = None
+    mape: Optional[float] = None
+    created_at: datetime
+    values: List[ForecastValueOut] = []
+    class Config:
+        from_attributes = True
