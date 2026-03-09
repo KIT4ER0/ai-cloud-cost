@@ -213,17 +213,21 @@ def smart_sync_ec2_metrics(
     timezone_offset_hours: int = 7,
 ):
     """
-    Smart metric sync for EC2 instances.
+    Smart metric sync for EC2 instances with gap detection.
 
     For each EC2 resource belonging to this profile:
-      1. No metrics in DB → pull from launch_time to now (full backfill)
-      2. Has metrics but gaps → pull from (latest_date + 1) to now
-      3. Already up to date → skip
+      1. No metrics in DB  → full backfill (pull from launch_time to now)
+      2. Has metrics        → detect internal gap dates AND new dates:
+         - Computes expected range (min_date .. yesterday)
+         - Finds missing dates (gaps + trailing)
+         - Pulls from the earliest missing date to now
+         - Upsert handles de-duplication of existing rows
+      3. Already up to date with no gaps → skip
 
     Uses AssumeRole session to query CloudWatch.
     """
     from .. import models, database
-    from sqlalchemy import func
+    # (no sqlalchemy.func needed — gap detection uses Python sets)
     from datetime import date, datetime, timedelta, timezone, time
 
     db = database.SessionLocal()
@@ -269,28 +273,46 @@ def smart_sync_ec2_metrics(
         for resource in resources:
             iid = resource.instance_id
 
-            # Check latest metric date in DB
-            latest_date = (
-                db.query(func.max(models.EC2Metric.metric_date))
+            # ── Get all existing metric dates for gap detection ──
+            existing_dates_rows = (
+                db.query(models.EC2Metric.metric_date)
                 .filter_by(ec2_resource_id=resource.ec2_resource_id)
-                .scalar()
+                .all()
             )
+            existing_dates = {row[0] for row in existing_dates_rows}
 
-            if latest_date and latest_date >= yesterday:
-                logger.info(f"  ✅ EC2 {iid} up to date (latest: {latest_date}), skipping")
-                continue
+            if existing_dates:
+                min_date = min(existing_dates)
+                max_date = max(existing_dates)
 
-            # Determine start_time for CloudWatch query
-            if latest_date:
-                # Case 2: has data but incomplete → pull from next day after latest
+                # Build the full expected date range: min_date .. yesterday
+                expected_dates = {
+                    min_date + timedelta(days=i)
+                    for i in range((yesterday - min_date).days + 1)
+                }
+                gap_dates = expected_dates - existing_dates
+
+                if max_date >= yesterday and not gap_dates:
+                    # Fully up to date with no internal gaps
+                    logger.info(f"  ✅ EC2 {iid} up to date (latest: {max_date}), no gaps, skipping")
+                    continue
+
+                # Determine the earliest date we need to pull from
+                # Could be an internal gap or the day after max_date
+                if gap_dates:
+                    pull_from = min(gap_dates)
+                else:
+                    pull_from = max_date + timedelta(days=1)
+
                 start_dt = datetime.combine(
-                    latest_date + timedelta(days=1),
-                    time.min,
-                    tzinfo=timezone.utc,
+                    pull_from, time.min, tzinfo=timezone.utc
                 )
-                logger.info(f"  📦 EC2 {iid} incomplete (latest: {latest_date}), pulling from {start_dt.date()}")
+                logger.info(
+                    f"  📦 EC2 {iid} pulling from {pull_from} "
+                    f"(gaps: {len(gap_dates)}, latest: {max_date})"
+                )
             else:
-                # Case 1: no data at all → pull from creation time (None = use days_back fallback)
+                # Case 1: no data at all → pull full history
                 start_dt = None
                 logger.info(f"  🆕 EC2 {iid} first time, pulling full history")
 
@@ -308,7 +330,7 @@ def smart_sync_ec2_metrics(
                 logger.warning(f"  ⚠️ No CloudWatch response for EC2 {iid}")
                 continue
 
-            # Parse and save
+            # Parse and save (upsert handles duplicates safely)
             daily = group_cw_by_date(cw_resp)
             _upsert_ec2_metric_rows(db, resource.ec2_resource_id, daily)
             logger.info(f"  💾 Saved {len(daily)} metric rows for EC2 {iid}")
