@@ -59,10 +59,10 @@ class EC2Metric(Base):
     ec2_metric_id = Column(BigInteger, primary_key=True, autoincrement=True)
     ec2_resource_id = Column(BigInteger, ForeignKey("cloudcost.ec2_resources.ec2_resource_id", ondelete="CASCADE"), nullable=False)
     metric_date = Column(Date, nullable=False, index=True)
-    cpu_utilization = Column(Float)
-    network_in = Column(Float)
-    network_out = Column(Float)
-    cpu_credit_usage = Column(Float)
+    cpu_utilization = Column(Float)          # % → DOUBLE PRECISION
+    network_in = Column(BigInteger)           # bytes → BIGINT
+    network_out = Column(BigInteger)          # bytes → BIGINT
+    cpu_credit_usage = Column(Float)          # sum → DOUBLE PRECISION
 
     resource = relationship("EC2Resource", back_populates="metrics")
 
@@ -116,9 +116,9 @@ class LambdaMetric(Base):
     lambda_metric_id = Column(BigInteger, primary_key=True, autoincrement=True)
     lambda_resource_id = Column(BigInteger, ForeignKey("cloudcost.lambda_resources.lambda_resource_id", ondelete="CASCADE"), nullable=False)
     metric_date = Column(Date, nullable=False, index=True)
-    duration_p95 = Column(Float)
-    invocations = Column(Float)
-    errors = Column(Float)
+    duration_p95 = Column(Float)              # time → DOUBLE PRECISION
+    invocations = Column(BigInteger)           # count → BIGINT
+    errors = Column(BigInteger)                # count → BIGINT
 
     resource = relationship("LambdaResource", back_populates="metrics")
 
@@ -172,15 +172,15 @@ class RDSMetric(Base):
     rds_metric_id = Column(BigInteger, primary_key=True, autoincrement=True)
     rds_resource_id = Column(BigInteger, ForeignKey("cloudcost.rds_resources.rds_resource_id", ondelete="CASCADE"), nullable=False)
     metric_date = Column(Date, nullable=False, index=True)
-    cpu_utilization = Column(Float)
-    database_connections = Column(Float)
-    freeable_memory = Column(Float)
-    free_storage_space = Column(Float)
-    disk_queue_depth = Column(Float)
-    ebs_byte_balance_pct = Column(Float)
-    ebs_io_balance_pct = Column(Float)
-    cpu_credit_balance = Column(Float)
-    cpu_credit_usage = Column(Float)
+    cpu_utilization = Column(Float)           # % → DOUBLE PRECISION
+    database_connections = Column(BigInteger)  # count → BIGINT
+    freeable_memory = Column(BigInteger)       # bytes → BIGINT
+    free_storage_space = Column(BigInteger)    # bytes → BIGINT
+    disk_queue_depth = Column(Float)           # average → DOUBLE PRECISION
+    ebs_byte_balance_pct = Column(Float)       # % → DOUBLE PRECISION
+    ebs_io_balance_pct = Column(Float)         # % → DOUBLE PRECISION
+    cpu_credit_balance = Column(Float)         # balance → DOUBLE PRECISION
+    cpu_credit_usage = Column(Float)           # sum → DOUBLE PRECISION
 
     resource = relationship("RDSResource", back_populates="metrics")
 
@@ -230,12 +230,12 @@ class S3Metric(Base):
     s3_metric_id = Column(BigInteger, primary_key=True, autoincrement=True)
     s3_resource_id = Column(BigInteger, ForeignKey("cloudcost.s3_resources.s3_resource_id", ondelete="CASCADE"), nullable=False)
     metric_date = Column(Date, nullable=False, index=True)
-    bucket_size_bytes = Column(Float)
-    number_of_objects = Column(Float)
-    get_requests = Column(Float)
-    put_requests = Column(Float)
-    bytes_downloaded = Column(Float)
-    bytes_uploaded = Column(Float)
+    bucket_size_bytes = Column(BigInteger)    # bytes → BIGINT
+    number_of_objects = Column(BigInteger)     # count → BIGINT
+    get_requests = Column(BigInteger)          # count → BIGINT
+    put_requests = Column(BigInteger)          # count → BIGINT
+    bytes_downloaded = Column(BigInteger)      # bytes → BIGINT
+    bytes_uploaded = Column(BigInteger)        # bytes → BIGINT
 
     resource = relationship("S3Resource", back_populates="metrics")
 
@@ -288,10 +288,10 @@ class ALBMetric(Base):
     alb_metric_id = Column(BigInteger, primary_key=True, autoincrement=True)
     alb_resource_id = Column(BigInteger, ForeignKey("cloudcost.alb_resources.alb_resource_id", ondelete="CASCADE"), nullable=False)
     metric_date = Column(Date, nullable=False, index=True)
-    request_count = Column(Float)
-    response_time_p95 = Column(Float)
-    http_5xx_count = Column(Float)
-    active_conn_count = Column(Float)
+    request_count = Column(BigInteger)        # count → BIGINT
+    response_time_p95 = Column(Float)          # time → DOUBLE PRECISION
+    http_5xx_count = Column(BigInteger)        # count → BIGINT
+    active_conn_count = Column(BigInteger)     # count → BIGINT
 
     resource = relationship("ALBResource", back_populates="metrics")
 

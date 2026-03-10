@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List
 
@@ -23,7 +23,16 @@ def get_ec2_resources(
     ).all()
 
 @router.get("/ec2/{resource_id}/metrics", response_model=List[schemas.EC2MetricOut])
-def get_ec2_metrics(resource_id: int, db: Session = Depends(database.get_db)):
+def get_ec2_metrics(
+    resource_id: int,
+    current_user: models.UserProfile = Depends(auth.get_current_user),
+    db: Session = Depends(database.get_db),
+):
+    resource = db.query(models.EC2Resource).filter_by(
+        ec2_resource_id=resource_id, profile_id=current_user.profile_id
+    ).first()
+    if not resource:
+        raise HTTPException(status_code=404, detail="Resource not found")
     rows = db.query(models.EC2Metric).filter(
         models.EC2Metric.ec2_resource_id == resource_id
     ).order_by(models.EC2Metric.metric_date).all()
@@ -49,7 +58,16 @@ def get_lambda_resources(
     ).all()
 
 @router.get("/lambda/{resource_id}/metrics", response_model=List[schemas.LambdaMetricOut])
-def get_lambda_metrics(resource_id: int, db: Session = Depends(database.get_db)):
+def get_lambda_metrics(
+    resource_id: int,
+    current_user: models.UserProfile = Depends(auth.get_current_user),
+    db: Session = Depends(database.get_db),
+):
+    resource = db.query(models.LambdaResource).filter_by(
+        lambda_resource_id=resource_id, profile_id=current_user.profile_id
+    ).first()
+    if not resource:
+        raise HTTPException(status_code=404, detail="Resource not found")
     rows = db.query(models.LambdaMetric).filter(
         models.LambdaMetric.lambda_resource_id == resource_id
     ).order_by(models.LambdaMetric.metric_date).all()
@@ -74,7 +92,16 @@ def get_rds_resources(
     ).all()
 
 @router.get("/rds/{resource_id}/metrics", response_model=List[schemas.RDSMetricOut])
-def get_rds_metrics(resource_id: int, db: Session = Depends(database.get_db)):
+def get_rds_metrics(
+    resource_id: int,
+    current_user: models.UserProfile = Depends(auth.get_current_user),
+    db: Session = Depends(database.get_db),
+):
+    resource = db.query(models.RDSResource).filter_by(
+        rds_resource_id=resource_id, profile_id=current_user.profile_id
+    ).first()
+    if not resource:
+        raise HTTPException(status_code=404, detail="Resource not found")
     rows = db.query(models.RDSMetric).filter(
         models.RDSMetric.rds_resource_id == resource_id
     ).order_by(models.RDSMetric.metric_date).all()
@@ -105,7 +132,16 @@ def get_s3_resources(
     ).all()
 
 @router.get("/s3/{resource_id}/metrics", response_model=List[schemas.S3MetricOut])
-def get_s3_metrics(resource_id: int, db: Session = Depends(database.get_db)):
+def get_s3_metrics(
+    resource_id: int,
+    current_user: models.UserProfile = Depends(auth.get_current_user),
+    db: Session = Depends(database.get_db),
+):
+    resource = db.query(models.S3Resource).filter_by(
+        s3_resource_id=resource_id, profile_id=current_user.profile_id
+    ).first()
+    if not resource:
+        raise HTTPException(status_code=404, detail="Resource not found")
     rows = db.query(models.S3Metric).filter(
         models.S3Metric.s3_resource_id == resource_id
     ).order_by(models.S3Metric.metric_date).all()
@@ -133,7 +169,16 @@ def get_alb_resources(
     ).all()
 
 @router.get("/alb/{resource_id}/metrics", response_model=List[schemas.ALBMetricOut])
-def get_alb_metrics(resource_id: int, db: Session = Depends(database.get_db)):
+def get_alb_metrics(
+    resource_id: int,
+    current_user: models.UserProfile = Depends(auth.get_current_user),
+    db: Session = Depends(database.get_db),
+):
+    resource = db.query(models.ALBResource).filter_by(
+        alb_resource_id=resource_id, profile_id=current_user.profile_id
+    ).first()
+    if not resource:
+        raise HTTPException(status_code=404, detail="Resource not found")
     rows = db.query(models.ALBMetric).filter(
         models.ALBMetric.alb_resource_id == resource_id
     ).order_by(models.ALBMetric.metric_date).all()

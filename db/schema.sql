@@ -36,10 +36,10 @@ CREATE TABLE IF NOT EXISTS ec2_metrics (
   ec2_metric_id       BIGSERIAL PRIMARY KEY,
   ec2_resource_id     BIGINT NOT NULL REFERENCES ec2_resources(ec2_resource_id) ON DELETE CASCADE,
   metric_date         DATE NOT NULL,
-  cpu_utilization     float,
-  network_in          float,
-  network_out         float,
-  cpu_credit_usage    float,
+  cpu_utilization     DOUBLE PRECISION,
+  network_in          BIGINT,
+  network_out         BIGINT,
+  cpu_credit_usage    DOUBLE PRECISION,
   UNIQUE (ec2_resource_id, metric_date)
 );
 
@@ -78,9 +78,9 @@ CREATE TABLE IF NOT EXISTS lambda_metrics (
   lambda_metric_id       BIGSERIAL PRIMARY KEY,
   lambda_resource_id     BIGINT NOT NULL REFERENCES lambda_resources(lambda_resource_id) ON DELETE CASCADE,
   metric_date            DATE NOT NULL,
-  duration_p95           float,
-  invocations            float,
-  errors                 float,
+  duration_p95           DOUBLE PRECISION,
+  invocations            BIGINT,
+  errors                 BIGINT,
   UNIQUE (lambda_resource_id, metric_date)
 );
 
@@ -119,15 +119,15 @@ CREATE TABLE IF NOT EXISTS rds_metrics (
   rds_metric_id         BIGSERIAL PRIMARY KEY,
   rds_resource_id       BIGINT NOT NULL REFERENCES rds_resources(rds_resource_id) ON DELETE CASCADE,
   metric_date           DATE NOT NULL,
-  cpu_utilization       float,
-  database_connections  float,
-  freeable_memory       float,
-  free_storage_space    float,
-  disk_queue_depth      float,
-  ebs_byte_balance_pct  float,
-  ebs_io_balance_pct    float,
-  cpu_credit_balance    float,
-  cpu_credit_usage      float,
+  cpu_utilization       DOUBLE PRECISION,
+  database_connections  BIGINT,
+  freeable_memory       BIGINT,
+  free_storage_space    BIGINT,
+  disk_queue_depth      DOUBLE PRECISION,
+  ebs_byte_balance_pct  DOUBLE PRECISION,
+  ebs_io_balance_pct    DOUBLE PRECISION,
+  cpu_credit_balance    DOUBLE PRECISION,
+  cpu_credit_usage      DOUBLE PRECISION,
   UNIQUE (rds_resource_id, metric_date)
 );
 
@@ -162,12 +162,12 @@ CREATE TABLE IF NOT EXISTS s3_metrics (
   s3_metric_id        BIGSERIAL PRIMARY KEY,
   s3_resource_id      BIGINT NOT NULL REFERENCES s3_resources(s3_resource_id) ON DELETE CASCADE,
   metric_date         DATE NOT NULL,
-  bucket_size_bytes   float,
-  number_of_objects   float,
-  get_requests        float,
-  put_requests        float,
-  bytes_downloaded    float,
-  bytes_uploaded      float,
+  bucket_size_bytes   BIGINT,
+  number_of_objects   BIGINT,
+  get_requests        BIGINT,
+  put_requests        BIGINT,
+  bytes_downloaded    BIGINT,
+  bytes_uploaded      BIGINT,
   UNIQUE (s3_resource_id, metric_date)
 );
 
@@ -205,10 +205,10 @@ CREATE TABLE IF NOT EXISTS alb_metrics (
   alb_metric_id         BIGSERIAL PRIMARY KEY,
   alb_resource_id       BIGINT NOT NULL REFERENCES alb_resources(alb_resource_id) ON DELETE CASCADE,
   metric_date           DATE NOT NULL,
-  request_count         float,
-  response_time_p95     float,
-  http_5xx_count        float,
-  active_conn_count     float,
+  request_count         BIGINT,
+  response_time_p95     DOUBLE PRECISION,
+  http_5xx_count        BIGINT,
+  active_conn_count     BIGINT,
   UNIQUE (alb_resource_id, metric_date)
 );
 
