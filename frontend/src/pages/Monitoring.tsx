@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useMemo } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -14,6 +14,13 @@ import {
 import { LineChart, Line, ResponsiveContainer, XAxis, YAxis, Tooltip } from "recharts"
 import { Loader2 } from "lucide-react"
 import { api } from "@/lib/api"
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from "@/components/ui/select"
 
 // Service-specific monitoring chart configs
 const serviceMonitoringConfig = {
@@ -246,6 +253,8 @@ export default function Monitoring() {
     const [selectedResourceId, setSelectedResourceId] = useState<number | null>(null)
     const [resources, setResources] = useState<any[]>([])
     const [metrics, setMetrics] = useState<any[]>([])
+    const [selectedYear, setSelectedYear] = useState<string | null>(null)
+    const [selectedMonthNum, setSelectedMonthNum] = useState<string | null>(null)
     const [loadingResources, setLoadingResources] = useState(false)
     const [loadingMetrics, setLoadingMetrics] = useState(false)
 
@@ -297,7 +306,55 @@ export default function Monitoring() {
         setSelectedService(service)
         setSelectedResourceId(null)
         setMetrics([])
+        setSelectedYear(null)
+        setSelectedMonthNum(null)
     }
+
+    const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+    const allMonths = ["01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12"]
+
+    // Compute year range: earliest data year .. current year + 2
+    const availableYears = useMemo(() => {
+        const currentYear = new Date().getFullYear()
+        let minYear = currentYear
+        metrics.forEach((m) => {
+            const y = parseInt(m.metric_date?.substring(0, 4))
+            if (y && y < minYear) minYear = y
+        })
+        const years: string[] = []
+        for (let y = minYear; y <= currentYear + 2; y++) {
+            years.push(String(y))
+        }
+        return years
+    }, [metrics])
+
+    // Auto-select latest year+month when metrics load
+    useEffect(() => {
+        if (metrics.length === 0) return
+        if (!selectedYear || !selectedMonthNum) {
+            const dates = metrics.map((m) => m.metric_date).filter(Boolean).sort()
+            if (dates.length > 0) {
+                const latest = dates[dates.length - 1]
+                setSelectedYear(latest.substring(0, 4))
+                setSelectedMonthNum(latest.substring(5, 7))
+            }
+        }
+    }, [metrics, selectedYear, selectedMonthNum])
+
+    // Reset when resource changes
+    useEffect(() => {
+        setSelectedYear(null)
+        setSelectedMonthNum(null)
+    }, [selectedResourceId])
+
+    // Build the YYYY-MM key for filtering
+    const selectedYM = selectedYear && selectedMonthNum ? `${selectedYear}-${selectedMonthNum}` : null
+
+    // Filter metrics by selected month
+    const filteredMetrics = useMemo(() => {
+        if (!selectedYM) return metrics
+        return metrics.filter((m) => m.metric_date?.startsWith(selectedYM))
+    }, [metrics, selectedYM])
 
     const monitoringCharts = serviceMonitoringConfig[selectedService]
 
@@ -366,21 +423,60 @@ export default function Monitoring() {
                         <span className="ml-2 text-muted-foreground">Loading metrics...</span>
                     </div>
                 ) : (
-                    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                        {monitoringCharts.map((chart, index) => {
-                            const chartData = metrics.map((m) => ({
-                                date: m.metric_date,
-                                value: m[chart.dataKey] ?? null,
-                            }))
-                            return (
-                                <MonitoringChart
-                                    key={`${selectedService}-${index}`}
-                                    title={chart.title}
-                                    subtitle={chart.subtitle}
-                                    data={chartData}
-                                />
-                            )
-                        })}
+                    <div className="space-y-4">
+                        {/* Month Picker */}
+                        {availableYears.length > 0 && (
+                            <div className="flex items-center justify-end gap-2">
+                                <Select
+                                    value={selectedMonthNum || undefined}
+                                    onValueChange={(value) => setSelectedMonthNum(value)}
+                                >
+                                    <SelectTrigger className="h-8 w-[100px] text-xs">
+                                        <SelectValue placeholder="เดือน" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {allMonths.map((m) => (
+                                            <SelectItem key={m} value={m}>
+                                                {monthNames[parseInt(m) - 1]}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                                <Select
+                                    value={selectedYear || undefined}
+                                    onValueChange={(value) => setSelectedYear(value)}
+                                >
+                                    <SelectTrigger className="h-8 w-[80px] text-xs">
+                                        <SelectValue placeholder="ปี" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {availableYears.map((y) => (
+                                            <SelectItem key={y} value={y}>
+                                                {y}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                        )}
+
+                        {/* Charts */}
+                        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                            {monitoringCharts.map((chart, index) => {
+                                const chartData = filteredMetrics.map((m) => ({
+                                    date: m.metric_date,
+                                    value: m[chart.dataKey] ?? null,
+                                }))
+                                return (
+                                    <MonitoringChart
+                                        key={`${selectedService}-${index}`}
+                                        title={chart.title}
+                                        subtitle={chart.subtitle}
+                                        data={chartData}
+                                    />
+                                )
+                            })}
+                        </div>
                     </div>
                 )
             )}

@@ -226,3 +226,173 @@ def save_s3_metrics(pull_results: dict, account_id: str, region: str, profile_id
         raise
     finally:
         db.close()
+
+
+def _upsert_s3_metric_rows(db, s3_resource_id: int, daily: dict):
+    """Bulk upsert S3 metric rows from parsed daily data."""
+    from .. import models
+    from sqlalchemy.dialects.postgresql import insert
+
+    metric_rows = []
+    for metric_date, values in daily.items():
+        metric_rows.append({
+            "s3_resource_id": s3_resource_id,
+            "metric_date": metric_date,
+            "bucket_size_bytes": values.get("storage_bytes"),
+            "number_of_objects": values.get("num_objects"),
+            "get_requests": values.get("get_requests"),
+            "put_requests": values.get("put_requests"),
+            "bytes_downloaded": values.get("bytes_downloaded"),
+            "bytes_uploaded": values.get("bytes_uploaded"),
+        })
+
+    if not metric_rows:
+        return
+
+    stmt = insert(models.S3Metric.__table__).values(metric_rows)
+    stmt = stmt.on_conflict_do_update(
+        index_elements=["s3_resource_id", "metric_date"],
+        set_={
+            "bucket_size_bytes": stmt.excluded.bucket_size_bytes,
+            "number_of_objects": stmt.excluded.number_of_objects,
+            "get_requests": stmt.excluded.get_requests,
+            "put_requests": stmt.excluded.put_requests,
+            "bytes_downloaded": stmt.excluded.bytes_downloaded,
+            "bytes_uploaded": stmt.excluded.bytes_uploaded,
+        }
+    )
+    db.execute(stmt)
+    db.commit()
+
+
+# ─── Smart Sync: Check DB → Pull only missing → Save ─────────────
+
+def smart_sync_s3_metrics(
+    customer_session: boto3.Session,
+    account_id: str,
+    region: str,
+    profile_id: int,
+    timezone_offset_hours: int = 7,
+):
+    """
+    Smart metric sync for S3 buckets with gap detection.
+
+    For each S3 resource belonging to this profile:
+      1. No metrics in DB  → full backfill (pull from created_time to now)
+      2. Has metrics        → detect internal gap dates AND new dates:
+         - Computes expected range (min_date .. yesterday)
+         - Finds missing dates (gaps + trailing)
+         - Pulls from the earliest missing date to now
+         - Upsert handles de-duplication of existing rows
+      3. Already up to date with no gaps → skip
+
+    Uses AssumeRole session to query CloudWatch.
+    """
+    from .. import models, database
+    from datetime import date, datetime, timedelta, timezone, time
+
+    db = database.SessionLocal()
+    try:
+        # 1. Discover live S3 buckets & upsert to DB
+        logger.info(f"Discovering S3 buckets for profile {profile_id} in {region}...")
+        live_buckets = list_s3_buckets(customer_session, region)
+        for bkt in live_buckets:
+            bname = bkt["bucket_name"]
+            resource = db.query(models.S3Resource).filter_by(
+                account_id=account_id, region=region, bucket_name=bname
+            ).first()
+            if not resource:
+                resource = models.S3Resource(
+                    profile_id=profile_id,
+                    account_id=account_id,
+                    region=region,
+                    bucket_name=bname,
+                )
+                db.add(resource)
+        db.commit()
+
+        # 2. Get all S3 resources for this profile
+        resources = (
+            db.query(models.S3Resource)
+            .filter_by(profile_id=profile_id, region=region)
+            .all()
+        )
+
+        if not resources:
+            logger.info(f"No S3 resources in DB for profile={profile_id}, region={region}")
+            return
+
+        today = date.today()
+        yesterday = today - timedelta(days=1)
+
+        for resource in resources:
+            bname = resource.bucket_name
+
+            # ── Get all existing metric dates for gap detection ──
+            existing_dates_rows = (
+                db.query(models.S3Metric.metric_date)
+                .filter_by(s3_resource_id=resource.s3_resource_id)
+                .all()
+            )
+            existing_dates = {row[0] for row in existing_dates_rows}
+
+            if existing_dates:
+                min_date = min(existing_dates)
+                max_date = max(existing_dates)
+
+                # Build the full expected date range: min_date .. yesterday
+                expected_dates = {
+                    min_date + timedelta(days=i)
+                    for i in range((yesterday - min_date).days + 1)
+                }
+                gap_dates = expected_dates - existing_dates
+
+                if max_date >= yesterday and not gap_dates:
+                    logger.info(f"  ✅ S3 {bname} up to date (latest: {max_date}), no gaps, skipping")
+                    continue
+
+                # Determine the earliest date we need to pull from
+                if gap_dates:
+                    pull_from = min(gap_dates)
+                else:
+                    pull_from = max_date + timedelta(days=1)
+
+                start_dt = datetime.combine(
+                    pull_from, time.min, tzinfo=timezone.utc
+                )
+                logger.info(
+                    f"  📦 S3 {bname} pulling from {pull_from} "
+                    f"(gaps: {len(gap_dates)}, latest: {max_date})"
+                )
+            else:
+                # Case 1: no data at all → pull full history
+                start_dt = None
+                logger.info(f"  🆕 S3 {bname} first time, pulling full history")
+
+            # Pull CloudWatch metrics
+            queries = build_s3_metric_queries_daily(bname)
+            cw_resp = get_cloudwatch_metric_data(
+                customer_session=customer_session,
+                region=region,
+                metric_data_queries=queries,
+                start_time=start_dt,
+                timezone_offset_hours=timezone_offset_hours,
+            )
+
+            if not cw_resp:
+                logger.warning(f"  ⚠️ No CloudWatch response for S3 {bname}")
+                continue
+
+            # Parse and save (upsert handles duplicates safely)
+            daily = group_cw_by_date(cw_resp)
+            _upsert_s3_metric_rows(db, resource.s3_resource_id, daily)
+            logger.info(f"  💾 Saved {len(daily)} metric rows for S3 {bname}")
+
+        logger.info(f"Smart sync completed for {len(resources)} S3 resources")
+
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error in smart sync S3 metrics: {e}")
+        raise
+    finally:
+        db.close()
