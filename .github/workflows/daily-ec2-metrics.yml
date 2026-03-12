@@ -41,4 +41,4 @@ jobs:
 
       - name: Pull & Save EC2 Metrics
         run: |
-          python -m backend.scripts.run_save_ec2metrics --days-back 7 --region us-east-1
+          python -m backend.scripts.run_save_ec2metrics --region us-east-1

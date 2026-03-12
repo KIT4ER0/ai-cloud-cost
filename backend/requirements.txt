@@ -14,3 +14,4 @@ tenacity
 httpx
 email-validator
 pydantic[email]
+python-dotenv
