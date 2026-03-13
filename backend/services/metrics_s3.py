@@ -67,7 +67,6 @@ def build_s3_metric_queries_daily(bucket_name: str, request_filter_id: str = "En
         q("get_requests", "GetRequests", "Sum", request_dims),
         q("put_requests", "PutRequests", "Sum", request_dims),
         q("bytes_downloaded", "BytesDownloaded", "Sum", request_dims),
-        q("bytes_uploaded", "BytesUploaded", "Sum", request_dims),
     ]
 
 
@@ -174,6 +173,7 @@ def save_s3_metrics(pull_results: dict, account_id: str, region: str, profile_id
                     account_id=account_id,
                     region=region,
                     bucket_name=bname,
+                    storage_class="Standard",
                 )
                 db.add(resource)
                 db.commit()
@@ -194,12 +194,9 @@ def save_s3_metrics(pull_results: dict, account_id: str, region: str, profile_id
 
                     "bucket_size_bytes": values.get("storage_bytes"),
                     "number_of_objects": values.get("num_objects"),
-
-                    # ✅ new request metrics
                     "get_requests": values.get("get_requests"),
                     "put_requests": values.get("put_requests"),
                     "bytes_downloaded": values.get("bytes_downloaded"),
-                    "bytes_uploaded": values.get("bytes_uploaded"),
                 })
 
             if metric_rows:
@@ -212,7 +209,6 @@ def save_s3_metrics(pull_results: dict, account_id: str, region: str, profile_id
                         "get_requests": stmt.excluded.get_requests,
                         "put_requests": stmt.excluded.put_requests,
                         "bytes_downloaded": stmt.excluded.bytes_downloaded,
-                        "bytes_uploaded": stmt.excluded.bytes_uploaded,
                     }
                 )
                 db.execute(stmt)
@@ -243,7 +239,6 @@ def _upsert_s3_metric_rows(db, s3_resource_id: int, daily: dict):
             "get_requests": values.get("get_requests"),
             "put_requests": values.get("put_requests"),
             "bytes_downloaded": values.get("bytes_downloaded"),
-            "bytes_uploaded": values.get("bytes_uploaded"),
         })
 
     if not metric_rows:
@@ -258,7 +253,6 @@ def _upsert_s3_metric_rows(db, s3_resource_id: int, daily: dict):
             "get_requests": stmt.excluded.get_requests,
             "put_requests": stmt.excluded.put_requests,
             "bytes_downloaded": stmt.excluded.bytes_downloaded,
-            "bytes_uploaded": stmt.excluded.bytes_uploaded,
         }
     )
     db.execute(stmt)
@@ -307,6 +301,7 @@ def smart_sync_s3_metrics(
                     account_id=account_id,
                     region=region,
                     bucket_name=bname,
+                    storage_class="Standard",
                 )
                 db.add(resource)
         db.commit()

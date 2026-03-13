@@ -27,7 +27,7 @@ SERVICE_METRIC_MAP: dict[str, dict] = {
         "resource_model": models.EC2Resource,
         "resource_id_col": "ec2_resource_id",
         "resource_lookup": "instance_id",
-        "metrics": ["cpu_utilization", "network_in", "network_out", "cpu_credit_usage"],
+        "metrics": ["cpu_utilization", "network_in", "network_out", "hours_running"],
     },
     "rds": {
         "model": models.RDSMetric,
@@ -35,8 +35,8 @@ SERVICE_METRIC_MAP: dict[str, dict] = {
         "resource_id_col": "rds_resource_id",
         "resource_lookup": "db_identifier",
         "metrics": [
-            "cpu_utilization", "database_connections", "freeable_memory",
-            "free_storage_space", "disk_queue_depth",
+            "cpu_utilization", "database_connections",
+            "free_storage_space", "data_transfer",
         ],
     },
     "lambda": {

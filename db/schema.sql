@@ -39,7 +39,7 @@ CREATE TABLE IF NOT EXISTS ec2_metrics (
   cpu_utilization     DOUBLE PRECISION,
   network_in          BIGINT,
   network_out         BIGINT,
-  cpu_credit_usage    DOUBLE PRECISION,
+  hours_running       DOUBLE PRECISION,
   UNIQUE (ec2_resource_id, metric_date)
 );
 
@@ -121,13 +121,8 @@ CREATE TABLE IF NOT EXISTS rds_metrics (
   metric_date           DATE NOT NULL,
   cpu_utilization       DOUBLE PRECISION,
   database_connections  BIGINT,
-  freeable_memory       BIGINT,
   free_storage_space    BIGINT,
-  disk_queue_depth      DOUBLE PRECISION,
-  ebs_byte_balance_pct  DOUBLE PRECISION,
-  ebs_io_balance_pct    DOUBLE PRECISION,
-  cpu_credit_balance    DOUBLE PRECISION,
-  cpu_credit_usage      DOUBLE PRECISION,
+  data_transfer         BIGINT,
   UNIQUE (rds_resource_id, metric_date)
 );
 
@@ -155,6 +150,7 @@ CREATE TABLE IF NOT EXISTS s3_resources (
   account_id     VARCHAR(12) NOT NULL,
   region         TEXT NOT NULL,
   bucket_name    TEXT NOT NULL,
+  storage_class  TEXT NOT NULL,
   UNIQUE (account_id, region, bucket_name)
 );
 
@@ -167,7 +163,6 @@ CREATE TABLE IF NOT EXISTS s3_metrics (
   get_requests        BIGINT,
   put_requests        BIGINT,
   bytes_downloaded    BIGINT,
-  bytes_uploaded      BIGINT,
   UNIQUE (s3_resource_id, metric_date)
 );
 

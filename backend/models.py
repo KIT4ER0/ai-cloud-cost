@@ -62,7 +62,7 @@ class EC2Metric(Base):
     cpu_utilization = Column(Float)          # % → DOUBLE PRECISION
     network_in = Column(BigInteger)           # bytes → BIGINT
     network_out = Column(BigInteger)          # bytes → BIGINT
-    cpu_credit_usage = Column(Float)          # sum → DOUBLE PRECISION
+    hours_running = Column(Float)             # hours -> DOUBLE PRECISION
 
     resource = relationship("EC2Resource", back_populates="metrics")
 
@@ -174,13 +174,8 @@ class RDSMetric(Base):
     metric_date = Column(Date, nullable=False, index=True)
     cpu_utilization = Column(Float)           # % → DOUBLE PRECISION
     database_connections = Column(BigInteger)  # count → BIGINT
-    freeable_memory = Column(BigInteger)       # bytes → BIGINT
     free_storage_space = Column(BigInteger)    # bytes → BIGINT
-    disk_queue_depth = Column(Float)           # average → DOUBLE PRECISION
-    ebs_byte_balance_pct = Column(Float)       # % → DOUBLE PRECISION
-    ebs_io_balance_pct = Column(Float)         # % → DOUBLE PRECISION
-    cpu_credit_balance = Column(Float)         # balance → DOUBLE PRECISION
-    cpu_credit_usage = Column(Float)           # sum → DOUBLE PRECISION
+    data_transfer = Column(BigInteger)
 
     resource = relationship("RDSResource", back_populates="metrics")
 
@@ -215,6 +210,7 @@ class S3Resource(Base):
     account_id = Column(String(12), nullable=False)
     region = Column(Text, nullable=False)
     bucket_name = Column(Text, nullable=False)
+    storage_class = Column(Text, nullable=False, default="Standard")
 
     profile = relationship("UserProfile", back_populates="s3_resources")
     metrics = relationship("S3Metric", back_populates="resource", cascade="all, delete-orphan")
@@ -235,7 +231,6 @@ class S3Metric(Base):
     get_requests = Column(BigInteger)          # count → BIGINT
     put_requests = Column(BigInteger)          # count → BIGINT
     bytes_downloaded = Column(BigInteger)      # bytes → BIGINT
-    bytes_uploaded = Column(BigInteger)        # bytes → BIGINT
 
     resource = relationship("S3Resource", back_populates="metrics")
 

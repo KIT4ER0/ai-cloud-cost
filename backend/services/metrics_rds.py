@@ -49,17 +49,8 @@ def build_rds_metric_queries_daily(db_identifier: str):
         # ===== Core =====
         q("rds_cpu", "CPUUtilization", "p95"),                # ✅ true daily p95
         q("rds_conn", "DatabaseConnections", "Maximum"),      # ✅ peak
-        q("rds_mem_free", "FreeableMemory", "Minimum"),       # ✅ worst
         q("rds_storage_free", "FreeStorageSpace", "Minimum"), # ✅ worst
-
-        # ===== I/O / Storage burst =====
-        q("rds_disk_q", "DiskQueueDepth", "Maximum"),              # ✅ peak
-        q("rds_ebs_byte_bal", "EBSByteBalancePercent", "Minimum"), # ✅ worst balance
-        q("rds_ebs_io_bal", "EBSIOBalancePercent", "Minimum"),     # ✅ worst balance
-
-        # ===== Burstable (t3/t4g) =====
-        q("rds_cpu_credit_bal", "CPUCreditBalance", "Minimum"), # ✅ worst case
-        q("rds_cpu_credit_use", "CPUCreditUsage", "Sum"),        # ✅ daily total
+        q("rds_data_transfer", "NetworkTransmitThroughput", "Sum"), # approximating data transfer
     ]
 
 
@@ -187,13 +178,8 @@ def save_rds_metrics(pull_results: dict, account_id: str, region: str, profile_i
                     "metric_date": metric_date,
                     "cpu_utilization": values.get("rds_cpu"),               # daily p95
                     "database_connections": values.get("rds_conn"),         # daily max
-                    "freeable_memory": values.get("rds_mem_free"),          # daily min
                     "free_storage_space": values.get("rds_storage_free"),   # daily min
-                    "disk_queue_depth": values.get("rds_disk_q"),           # daily max
-                    "ebs_byte_balance_pct": values.get("rds_ebs_byte_bal"), # daily min
-                    "ebs_io_balance_pct": values.get("rds_ebs_io_bal"),     # daily min
-                    "cpu_credit_balance": values.get("rds_cpu_credit_bal"), # daily min
-                    "cpu_credit_usage": values.get("rds_cpu_credit_use"),   # daily sum
+                    "data_transfer": values.get("rds_data_transfer"),
                 })
 
             if metric_rows:
@@ -203,13 +189,8 @@ def save_rds_metrics(pull_results: dict, account_id: str, region: str, profile_i
                     set_={
                         "cpu_utilization": stmt.excluded.cpu_utilization,
                         "database_connections": stmt.excluded.database_connections,
-                        "freeable_memory": stmt.excluded.freeable_memory,
                         "free_storage_space": stmt.excluded.free_storage_space,
-                        "disk_queue_depth": stmt.excluded.disk_queue_depth,
-                        "ebs_byte_balance_pct": stmt.excluded.ebs_byte_balance_pct,
-                        "ebs_io_balance_pct": stmt.excluded.ebs_io_balance_pct,
-                        "cpu_credit_balance": stmt.excluded.cpu_credit_balance,
-                        "cpu_credit_usage": stmt.excluded.cpu_credit_usage,
+                        "data_transfer": stmt.excluded.data_transfer,
                     }
                 )
                 db.execute(stmt)
@@ -237,13 +218,8 @@ def _upsert_rds_metric_rows(db, rds_resource_id: int, daily: dict):
             "metric_date": metric_date,
             "cpu_utilization": values.get("rds_cpu"),
             "database_connections": values.get("rds_conn"),
-            "freeable_memory": values.get("rds_mem_free"),
             "free_storage_space": values.get("rds_storage_free"),
-            "disk_queue_depth": values.get("rds_disk_q"),
-            "ebs_byte_balance_pct": values.get("rds_ebs_byte_bal"),
-            "ebs_io_balance_pct": values.get("rds_ebs_io_bal"),
-            "cpu_credit_balance": values.get("rds_cpu_credit_bal"),
-            "cpu_credit_usage": values.get("rds_cpu_credit_use"),
+            "data_transfer": values.get("rds_data_transfer"),
         })
 
     if not metric_rows:
@@ -255,13 +231,8 @@ def _upsert_rds_metric_rows(db, rds_resource_id: int, daily: dict):
         set_={
             "cpu_utilization": stmt.excluded.cpu_utilization,
             "database_connections": stmt.excluded.database_connections,
-            "freeable_memory": stmt.excluded.freeable_memory,
             "free_storage_space": stmt.excluded.free_storage_space,
-            "disk_queue_depth": stmt.excluded.disk_queue_depth,
-            "ebs_byte_balance_pct": stmt.excluded.ebs_byte_balance_pct,
-            "ebs_io_balance_pct": stmt.excluded.ebs_io_balance_pct,
-            "cpu_credit_balance": stmt.excluded.cpu_credit_balance,
-            "cpu_credit_usage": stmt.excluded.cpu_credit_usage,
+            "data_transfer": stmt.excluded.data_transfer,
         }
     )
     db.execute(stmt)

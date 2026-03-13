@@ -80,7 +80,7 @@ class EC2MetricOut(BaseModel):
     cpu_utilization: Optional[float] = None
     network_in: Optional[float] = None
     network_out: Optional[float] = None
-    cpu_credit_usage: Optional[float] = None
+    hours_running: Optional[float] = None
     class Config:
         from_attributes = True
 
@@ -124,13 +124,8 @@ class RDSMetricOut(BaseModel):
     metric_date: str
     cpu_utilization: Optional[float] = None
     database_connections: Optional[float] = None
-    freeable_memory: Optional[float] = None
     free_storage_space: Optional[float] = None
-    disk_queue_depth: Optional[float] = None
-    ebs_byte_balance_pct: Optional[float] = None
-    ebs_io_balance_pct: Optional[float] = None
-    cpu_credit_balance: Optional[float] = None
-    cpu_credit_usage: Optional[float] = None
+    data_transfer: Optional[float] = None
     class Config:
         from_attributes = True
 
@@ -141,6 +136,7 @@ class S3ResourceOut(BaseModel):
     account_id: str
     region: str
     bucket_name: str
+    storage_class: str
     class Config:
         from_attributes = True
 
@@ -151,7 +147,6 @@ class S3MetricOut(BaseModel):
     get_requests: Optional[float] = None
     put_requests: Optional[float] = None
     bytes_downloaded: Optional[float] = None
-    bytes_uploaded: Optional[float] = None
     class Config:
         from_attributes = True
 

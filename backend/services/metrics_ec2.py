@@ -42,7 +42,6 @@ def build_ec2_metric_queries_daily(instance_id: str):
         q("cpu", "CPUUtilization", "p95"),     # ✅ TRUE daily p95
         q("netin", "NetworkIn", "Sum"),        # ✅ daily sum
         q("netout", "NetworkOut", "Sum"),      # ✅ daily sum
-        q("cpu_credit", "CPUCreditUsage", "Sum"),  # ✅ daily sum (better than Average for usage)
     ]
 
 
@@ -183,7 +182,7 @@ def _upsert_ec2_metric_rows(db, ec2_resource_id: int, daily: dict):
             "cpu_utilization": values.get("cpu"),
             "network_in": values.get("netin"),
             "network_out": values.get("netout"),
-            "cpu_credit_usage": values.get("cpu_credit"),
+            "hours_running": 24.0,  # default to 24 hours for daily metrics
         })
 
     if not metric_rows:
@@ -196,7 +195,7 @@ def _upsert_ec2_metric_rows(db, ec2_resource_id: int, daily: dict):
             "cpu_utilization": stmt.excluded.cpu_utilization,
             "network_in": stmt.excluded.network_in,
             "network_out": stmt.excluded.network_out,
-            "cpu_credit_usage": stmt.excluded.cpu_credit_usage,
+            "hours_running": stmt.excluded.hours_running,
         }
     )
     db.execute(stmt)
