@@ -72,6 +72,7 @@ class EC2ResourceOut(BaseModel):
     instance_id: str
     instance_type: Optional[str] = None
     state: Optional[str] = None
+    launch_time: Optional[str] = None
     class Config:
         from_attributes = True
 

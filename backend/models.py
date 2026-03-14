@@ -44,6 +44,7 @@ class EC2Resource(Base):
     instance_id = Column(Text, nullable=False)
     instance_type = Column(Text)
     state = Column(Text)
+    launch_time = Column(DateTime)
 
     profile = relationship("UserProfile", back_populates="ec2_resources")
     metrics = relationship("EC2Metric", back_populates="resource", cascade="all, delete-orphan")

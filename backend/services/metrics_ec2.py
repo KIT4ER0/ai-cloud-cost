@@ -1,8 +1,13 @@
 import boto3
 import logging
+import time as time_module
+from datetime import date, datetime, timedelta, timezone, time
 from botocore.exceptions import ClientError
-from .cloudwatch_utils import get_cloudwatch_metric_data, print_all_datapoints
+from .cloudwatch_utils import get_cloudwatch_metric_data, fetch_cw_with_retry
 from .aggregate import group_cw_by_date
+from .. import models, database
+from sqlalchemy.dialects.postgresql import insert
+
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
@@ -47,6 +52,24 @@ def build_ec2_metric_queries_daily(instance_id: str):
 
 
 
+def compute_hours_running(metric_date, launch_time) -> float:
+    """Calculate hours running for the given day based on launch time."""
+    
+    if not launch_time:
+        return 24.0
+    
+    # If launched on a future date (shouldn't happen with CW, but safe)
+    if launch_time.date() > metric_date:
+        return 0.0
+        
+    # If launched on this exact metric date
+    if launch_time.date() == metric_date:
+        eod = datetime.combine(metric_date, time(23, 59, 59), tzinfo=timezone.utc)
+        hours = (eod - launch_time).total_seconds() / 3600.0
+        return max(0.0, min(24.0, hours))
+        
+    return 24.0
+
 # ─── EC2 Instance Discovery ───────────────────────────────────────
 
 def list_ec2_instances(
@@ -64,14 +87,18 @@ def list_ec2_instances(
     for page in paginator.paginate():
         for reservation in page["Reservations"]:
             for i in reservation["Instances"]:
+                state_name = i["State"]["Name"]
+                if state_name in ("terminated", "shutting-down"):
+                    continue
+                
                 instances.append({
                     "instance_id": i["InstanceId"],
                     "instance_type": i["InstanceType"],
-                    "state": i["State"]["Name"],
+                    "state": state_name,
                     "launch_time": i.get("LaunchTime"),  # datetime (tz-aware)
                 })
 
-    logger.info(f"Found {len(instances)} EC2 instances in {region}")
+    logger.info(f"Found {len(instances)} active EC2 instances in {region}")
     return instances
 
 
@@ -119,8 +146,7 @@ def save_ec2_metrics(pull_results: dict, account_id: str, region: str, profile_i
     Save pulled EC2 metrics to the database.
     Upserts resources and bulk-upserts metric rows.
     """
-    from .. import models, database
-    from sqlalchemy.dialects.postgresql import insert
+    
 
     db = database.SessionLocal()
     try:
@@ -141,14 +167,14 @@ def save_ec2_metrics(pull_results: dict, account_id: str, region: str, profile_i
                     instance_id=iid,
                     instance_type=inst.get("instance_type"),
                     state=inst.get("state"),
+                    launch_time=inst.get("launch_time"),
                 )
                 db.add(resource)
-                db.commit()
-                db.refresh(resource)
+                db.flush()
             else:
                 resource.instance_type = inst.get("instance_type")
                 resource.state = inst.get("state")
-                db.commit()
+                db.flush()
 
             if not cw_resp:
                 continue
@@ -157,9 +183,12 @@ def save_ec2_metrics(pull_results: dict, account_id: str, region: str, profile_i
             daily = group_cw_by_date(cw_resp)
 
             # 3) Bulk upsert metrics
-            _upsert_ec2_metric_rows(db, resource.ec2_resource_id, daily)
+            _upsert_ec2_metric_rows(db, resource.ec2_resource_id, daily, inst.get("launch_time"))
 
             logger.info(f"Saved {len(daily)} DAILY metric rows for EC2 {iid}")
+            
+        # Commit all instances together
+        db.commit()
 
     except Exception as e:
         db.rollback()
@@ -169,20 +198,20 @@ def save_ec2_metrics(pull_results: dict, account_id: str, region: str, profile_i
         db.close()
 
 
-def _upsert_ec2_metric_rows(db, ec2_resource_id: int, daily: dict):
+def _upsert_ec2_metric_rows(db, ec2_resource_id: int, daily: dict, launch_time=None):
     """Bulk upsert EC2 metric rows from parsed daily data."""
-    from .. import models
-    from sqlalchemy.dialects.postgresql import insert
 
     metric_rows = []
     for metric_date, values in daily.items():
+        hours = compute_hours_running(metric_date, launch_time)
+        
         metric_rows.append({
             "ec2_resource_id": ec2_resource_id,
             "metric_date": metric_date,
             "cpu_utilization": values.get("cpu"),
             "network_in": values.get("netin"),
             "network_out": values.get("netout"),
-            "hours_running": 24.0,  # default to 24 hours for daily metrics
+            "hours_running": hours,
         })
 
     if not metric_rows:
@@ -199,7 +228,7 @@ def _upsert_ec2_metric_rows(db, ec2_resource_id: int, daily: dict):
         }
     )
     db.execute(stmt)
-    db.commit()
+    # Removing db.commit() here so the caller handles transactions
 
 
 # ─── Smart Sync: Check DB → Pull only missing → Save ─────────────
@@ -225,9 +254,7 @@ def smart_sync_ec2_metrics(
 
     Uses AssumeRole session to query CloudWatch.
     """
-    from .. import models, database
-    # (no sqlalchemy.func needed — gap detection uses Python sets)
-    from datetime import date, datetime, timedelta, timezone, time
+
 
     db = database.SessionLocal()
     try:
@@ -246,7 +273,8 @@ def smart_sync_ec2_metrics(
                     region=region,
                     instance_id=iid,
                     instance_type=inst.get("instance_type"),
-                    state=inst.get("state")
+                    state=inst.get("state"),
+                    launch_time=inst.get("launch_time"),
                 )
                 db.add(resource)
             else:
@@ -272,68 +300,80 @@ def smart_sync_ec2_metrics(
         for resource in resources:
             iid = resource.instance_id
 
-            # ── Get all existing metric dates for gap detection ──
-            existing_dates_rows = (
-                db.query(models.EC2Metric.metric_date)
-                .filter_by(ec2_resource_id=resource.ec2_resource_id)
-                .all()
-            )
-            existing_dates = {row[0] for row in existing_dates_rows}
+            # Grab the launch instance from live_instances
+            live_inst = next((i for i in live_instances if i["instance_id"] == iid), None)
+            resource_launch_time = live_inst.get("launch_time") if live_inst else resource.launch_time
+            
+            try:
+                # ── Get all existing metric dates for gap detection ──
+                existing_dates_rows = (
+                    db.query(models.EC2Metric.metric_date)
+                    .filter_by(ec2_resource_id=resource.ec2_resource_id)
+                    .all()
+                )
+                existing_dates = {row[0] for row in existing_dates_rows}
 
-            if existing_dates:
-                min_date = min(existing_dates)
-                max_date = max(existing_dates)
+                if existing_dates:
+                    min_date = min(existing_dates)
+                    max_date = max(existing_dates)
 
-                # Build the full expected date range: min_date .. yesterday
-                expected_dates = {
-                    min_date + timedelta(days=i)
-                    for i in range((yesterday - min_date).days + 1)
-                }
-                gap_dates = expected_dates - existing_dates
+                    # Build the full expected date range: min_date .. yesterday
+                    expected_dates = {
+                        min_date + timedelta(days=i)
+                        for i in range((yesterday - min_date).days + 1)
+                    }
+                    gap_dates = expected_dates - existing_dates
 
-                if max_date >= yesterday and not gap_dates:
-                    # Fully up to date with no internal gaps
-                    logger.info(f"  ✅ EC2 {iid} up to date (latest: {max_date}), no gaps, skipping")
+                    if max_date >= yesterday and not gap_dates:
+                        # Fully up to date with no internal gaps
+                        logger.info(f" EC2 {iid} up to date (latest: {max_date}), no gaps, skipping")
+                        continue
+
+                    # Determine the earliest date we need to pull from
+                    # Could be an internal gap or the day after max_date
+                    if gap_dates:
+                        pull_from = min(gap_dates)
+                    else:
+                        pull_from = max_date + timedelta(days=1)
+
+                    start_dt = datetime.combine(
+                        pull_from, time.min, tzinfo=timezone.utc
+                    )
+                    logger.info(
+                        f"EC2 {iid} pulling from {pull_from} "
+                        f"(gaps: {len(gap_dates)}, latest: {max_date})"
+                    )
+                else:
+                    # Case 1: no data at all → pull full history based on launch time
+                    start_dt = resource_launch_time
+                    logger.info(f"EC2 {iid} first time, pulling full history since {start_dt}")
+
+                # Pull CloudWatch metrics with basic retry
+                queries = build_ec2_metric_queries_daily(iid)
+                
+                cw_resp = fetch_cw_with_retry(
+                    customer_session=customer_session,
+                    region=region,
+                    queries=queries,
+                    start_time=start_dt,
+                    timezone_offset_hours=timezone_offset_hours,
+                    max_retries=3
+                )
+
+                if cw_resp is None:
+                    logger.error(f"EC2 {iid} CloudWatch pull failed after 3 retries, skipping")
                     continue
 
-                # Determine the earliest date we need to pull from
-                # Could be an internal gap or the day after max_date
-                if gap_dates:
-                    pull_from = min(gap_dates)
-                else:
-                    pull_from = max_date + timedelta(days=1)
+                # Parse and save (upsert handles duplicates safely)
+                daily = group_cw_by_date(cw_resp)
+                _upsert_ec2_metric_rows(db, resource.ec2_resource_id, daily, resource_launch_time)
+                logger.info(f"Saved {len(daily)} metric rows for EC2 {iid}")
+                
+            except Exception as metric_err:
+                logger.error(f"Failed syncing EC2 {iid}: {metric_err}")
+                continue  # Skip to next instance instead of crashing whole job
 
-                start_dt = datetime.combine(
-                    pull_from, time.min, tzinfo=timezone.utc
-                )
-                logger.info(
-                    f"  📦 EC2 {iid} pulling from {pull_from} "
-                    f"(gaps: {len(gap_dates)}, latest: {max_date})"
-                )
-            else:
-                # Case 1: no data at all → pull full history
-                start_dt = None
-                logger.info(f"  🆕 EC2 {iid} first time, pulling full history")
-
-            # Pull CloudWatch metrics
-            queries = build_ec2_metric_queries_daily(iid)
-            cw_resp = get_cloudwatch_metric_data(
-                customer_session=customer_session,
-                region=region,
-                metric_data_queries=queries,
-                start_time=start_dt,
-                timezone_offset_hours=timezone_offset_hours,
-            )
-
-            if not cw_resp:
-                logger.warning(f"  ⚠️ No CloudWatch response for EC2 {iid}")
-                continue
-
-            # Parse and save (upsert handles duplicates safely)
-            daily = group_cw_by_date(cw_resp)
-            _upsert_ec2_metric_rows(db, resource.ec2_resource_id, daily)
-            logger.info(f"  💾 Saved {len(daily)} metric rows for EC2 {iid}")
-
+        db.commit()
         logger.info(f"Smart sync completed for {len(resources)} EC2 resources")
 
     except Exception as e:

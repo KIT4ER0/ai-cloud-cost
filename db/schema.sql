@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS ec2_resources (
   instance_id     TEXT NOT NULL,
   instance_type   TEXT,
   state           TEXT,
+  launch_time     TIMESTAMP,
   UNIQUE (account_id, region, instance_id)
 );
 

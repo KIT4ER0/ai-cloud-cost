@@ -1,6 +1,8 @@
 import boto3
 import logging
 from datetime import datetime, timedelta, timezone
+from typing import Optional
+import time as time_module
 from botocore.exceptions import ClientError
 
 logger = logging.getLogger(__name__)
@@ -44,7 +46,7 @@ def get_cloudwatch_metric_data(
     max_datapoints: int = 10000,
     align_to_day: bool = True,
     timezone_offset_hours: int = 0,
-    start_time: datetime | None = None,
+    start_time: Optional[datetime] = None,
 ):
     """
     Fetch CloudWatch metric data with pagination.
@@ -74,49 +76,66 @@ def get_cloudwatch_metric_data(
     start_time_utc = computed_start.astimezone(timezone.utc)
     end_time_utc = end_time.astimezone(timezone.utc)
 
-    try:
-        logger.info("[START] Calling CloudWatch get_metric_data (BATCH, paginated)")
-        all_results_by_id = {}
-        next_token = None
-        page = 0
+    logger.info("[START] Calling CloudWatch get_metric_data (BATCH, paginated)")
+    all_results_by_id = {}
+    next_token = None
+    page = 0
 
-        while True:
-            page += 1
-            kwargs = dict(
-                MetricDataQueries=metric_data_queries,
-                StartTime=start_time_utc,
-                EndTime=end_time_utc,
-                ScanBy="TimestampAscending",
-                MaxDatapoints=max_datapoints,
-            )
-            if next_token:
-                kwargs["NextToken"] = next_token
+    while True:
+        page += 1
+        kwargs = dict(
+            MetricDataQueries=metric_data_queries,
+            StartTime=start_time_utc,
+            EndTime=end_time_utc,
+            ScanBy="TimestampAscending",
+            MaxDatapoints=max_datapoints,
+        )
+        if next_token:
+            kwargs["NextToken"] = next_token
 
-            resp = cw.get_metric_data(**kwargs)
-            logger.info(f"[PAGE {page}] fetched")
+        resp = cw.get_metric_data(**kwargs)
+        logger.info(f"[PAGE {page}] fetched")
 
-            for r in resp.get("MetricDataResults", []):
-                _id = r.get("Id")
-                if _id not in all_results_by_id:
-                    all_results_by_id[_id] = {
-                        "Id": _id,
-                        "Label": r.get("Label"),
-                        "StatusCode": r.get("StatusCode"),
-                        "Timestamps": [],
-                        "Values": [],
-                    }
-                all_results_by_id[_id]["Timestamps"].extend(r.get("Timestamps", []))
-                all_results_by_id[_id]["Values"].extend(r.get("Values", []))
-
-            next_token = resp.get("NextToken")
-            if not next_token:
-                return {
-                    "MetricDataResults": list(all_results_by_id.values()),
-                    "Messages": resp.get("Messages", []),
-                    "StartTimeUTC": start_time_utc,
-                    "EndTimeUTC": end_time_utc,
+        for r in resp.get("MetricDataResults", []):
+            _id = r.get("Id")
+            if _id not in all_results_by_id:
+                all_results_by_id[_id] = {
+                    "Id": _id,
+                    "Label": r.get("Label"),
+                    "StatusCode": r.get("StatusCode"),
+                    "Timestamps": [],
+                    "Values": [],
                 }
+            all_results_by_id[_id]["Timestamps"].extend(r.get("Timestamps", []))
+            all_results_by_id[_id]["Values"].extend(r.get("Values", []))
 
-    except ClientError as e:
-        logger.error(f"[FAILED] CloudWatch error: {e.response['Error']['Message']}")
-        return None
+        next_token = resp.get("NextToken")
+        if not next_token:
+            return {
+                "MetricDataResults": list(all_results_by_id.values()),
+                "Messages": resp.get("Messages", []),
+                "StartTimeUTC": start_time_utc,
+                "EndTimeUTC": end_time_utc,
+            }
+
+def fetch_cw_with_retry(customer_session, region, queries, start_time, timezone_offset_hours, max_retries=3):
+    """Helper to fetch CloudWatch metrics with exponential backoff on Throttling."""
+    import time as time_module
+    for attempt in range(max_retries):
+        try:
+            return get_cloudwatch_metric_data(
+                customer_session=customer_session,
+                region=region,
+                metric_data_queries=queries,
+                start_time=start_time,
+                timezone_offset_hours=timezone_offset_hours,
+            )
+        except ClientError as ce:
+            if ce.response['Error']['Code'] == 'Throttling':
+                logger.warning(f"Throttled by CloudWatch, retrying attempt {attempt+1}/{max_retries}")
+                time_module.sleep(2 ** attempt)
+            else:
+                raise
+                
+    logger.error("Max retries reached for CloudWatch fetch")
+    raise RuntimeError("CloudWatch fetch failed after max retries")
