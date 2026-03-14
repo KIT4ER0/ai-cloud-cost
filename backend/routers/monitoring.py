@@ -17,10 +17,13 @@ def get_ec2_resources(
     current_user: models.UserProfile = Depends(auth.get_current_user),
     db: Session = Depends(database.get_db),
 ):
-    return db.query(models.EC2Resource).filter(
+    print(f"DEBUG: get_ec2_resources called for profile_id={current_user.profile_id}")
+    resources = db.query(models.EC2Resource).filter(
         models.EC2Resource.profile_id == current_user.profile_id,
         models.EC2Resource.instance_id != 'AGGREGATED'
     ).all()
+    print(f"DEBUG: found {len(resources)} resources")
+    return resources
 
 @router.get("/ec2/{resource_id}/metrics", response_model=List[schemas.EC2MetricOut])
 def get_ec2_metrics(
@@ -40,9 +43,13 @@ def get_ec2_metrics(
         schemas.EC2MetricOut(
             metric_date=str(r.metric_date),
             cpu_utilization=r.cpu_utilization,
+            cpu_max=r.cpu_max,
+            cpu_p99=r.cpu_p99,
             network_in=r.network_in,
             network_out=r.network_out,
-            cpu_credit_usage=r.cpu_credit_usage,
+            network_egress_gb=r.network_egress_gb,
+            network_cross_az_gb=r.network_cross_az_gb,
+            hours_running=r.hours_running,
         ) for r in rows
     ]
 

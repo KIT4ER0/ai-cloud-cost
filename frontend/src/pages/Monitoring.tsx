@@ -25,10 +25,12 @@ import {
 // Service-specific monitoring chart configs
 const serviceMonitoringConfig = {
     EC2: [
-        { title: "CPU Utilization", subtitle: "P95 (%)", dataKey: "cpu_utilization" },
-        { title: "Network In", subtitle: "bytes (sum)", dataKey: "network_in" },
-        { title: "Network Out", subtitle: "bytes (sum)", dataKey: "network_out" },
-        { title: "CPU Credit Usage", subtitle: "credits", dataKey: "cpu_credit_usage" },
+        { title: "CPU Avg", subtitle: "% (Avg)", dataKey: "cpu_utilization" },
+        { title: "CPU Max", subtitle: "% (Max)", dataKey: "cpu_max" },
+        { title: "CPU P99", subtitle: "% (P99)", dataKey: "cpu_p99" },
+        { title: "Hours Running", subtitle: "hours (daily)", dataKey: "hours_running" },
+        { title: "Network In", subtitle: "bytes", dataKey: "network_in" },
+        { title: "Network Out", subtitle: "bytes", dataKey: "network_out" },
     ],
     Lambda: [
         { title: "Duration P95", subtitle: "milliseconds", dataKey: "duration_p95" },
@@ -228,8 +230,8 @@ function ALBTable({ resources, selectedId, onRowClick }: { resources: any[], sel
                 <TableRow>
                     <TableHead className="w-12"></TableHead>
                     <TableHead>Load Balancer</TableHead>
-                    <TableHead>DNS Name</TableHead>
-                    <TableHead>Scheme</TableHead>
+                    <TableHead>ALB Type</TableHead>
+                    <TableHead>State</TableHead>
                     <TableHead>Region</TableHead>
                 </TableRow>
             </TableHeader>
@@ -237,9 +239,9 @@ function ALBTable({ resources, selectedId, onRowClick }: { resources: any[], sel
                 {resources.map((r) => (
                     <TableRow key={r.alb_resource_id} className="cursor-pointer hover:bg-muted/50" onClick={() => onRowClick(r.alb_resource_id)}>
                         <TableCell><Checkbox checked={selectedId === r.alb_resource_id} onCheckedChange={() => onRowClick(r.alb_resource_id)} /></TableCell>
-                        <TableCell className="font-medium">{r.lb_name}</TableCell>
-                        <TableCell className="font-mono text-sm truncate max-w-[200px]" title={r.dns_name || ""}>{r.dns_name || "-"}</TableCell>
-                        <TableCell>{r.scheme || "-"}</TableCell>
+                        <TableCell className="font-medium">{r.alb_name}</TableCell>
+                        <TableCell className="font-mono text-sm truncate max-w-[200px]" title={r.alb_type || ""}>{r.alb_type || "-"}</TableCell>
+                        <TableCell>{r.state || "-"}</TableCell>
                         <TableCell><Badge variant="outline" className="border-primary text-primary">{r.region}</Badge></TableCell>
                     </TableRow>
                 ))}

@@ -20,6 +20,7 @@ class UserProfile(Base):
 
     # Relationships to resources
     ec2_resources = relationship("EC2Resource", back_populates="profile", cascade="all, delete-orphan")
+    ec2_elastic_ips = relationship("EC2ElasticIP", back_populates="profile", cascade="all, delete-orphan")
     lambda_resources = relationship("LambdaResource", back_populates="profile", cascade="all, delete-orphan")
     rds_resources = relationship("RDSResource", back_populates="profile", cascade="all, delete-orphan")
     s3_resources = relationship("S3Resource", back_populates="profile", cascade="all, delete-orphan")
@@ -50,10 +51,14 @@ class EC2Resource(Base):
     on_demand_price_hr = Column(Float)
     environment = Column(Text)
     usage_pattern = Column(Text)
+    has_public_ip = Column(Boolean)
 
     profile = relationship("UserProfile", back_populates="ec2_resources")
     metrics = relationship("EC2Metric", back_populates="resource", cascade="all, delete-orphan")
     costs = relationship("EC2Cost", back_populates="resource", cascade="all, delete-orphan")
+    elastic_ips = relationship("EC2ElasticIP", back_populates="resource")
+    ebs_volumes = relationship("EC2EBSVolume", back_populates="resource", cascade="all, delete-orphan")
+    snapshots = relationship("EC2EBSSnapshot", back_populates="resource")
 
 class EC2Metric(Base):
     __tablename__ = "ec2_metrics"
@@ -70,6 +75,8 @@ class EC2Metric(Base):
     cpu_p99 = Column(Float)
     network_in = Column(BigInteger)           # bytes → BIGINT
     network_out = Column(BigInteger)          # bytes → BIGINT
+    network_egress_gb = Column(Float)
+    network_cross_az_gb = Column(Float)
     hours_running = Column(Float)             # hours -> DOUBLE PRECISION
 
     resource = relationship("EC2Resource", back_populates="metrics")
@@ -89,6 +96,84 @@ class EC2Cost(Base):
     currency_src = Column(Text, nullable=False, default='USD')
 
     resource = relationship("EC2Resource", back_populates="costs")
+
+
+class EC2ElasticIP(Base):
+    __tablename__ = "ec2_elastic_ips"
+    __table_args__ = (
+        UniqueConstraint('account_id', 'region', 'allocation_id', name='uq_ec2_eips_unique'),
+        {"schema": "cloudcost"}
+    )
+
+    eip_id = Column(BigInteger, primary_key=True, autoincrement=True)
+    profile_id = Column(BigInteger, ForeignKey("cloudcost.user_profiles.profile_id"), nullable=False, index=True)
+    account_id = Column(String(12), nullable=False)
+    region = Column(Text, nullable=False)
+    allocation_id = Column(Text, nullable=False)
+    public_ip = Column(String(20), nullable=False)
+    ec2_resource_id = Column(BigInteger, ForeignKey("cloudcost.ec2_resources.ec2_resource_id", ondelete="SET NULL"))
+    association_id = Column(Text)
+    is_idle = Column(Boolean, nullable=False, default=False)
+    idle_since = Column(DateTime(timezone=True))
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    profile = relationship("UserProfile", back_populates="ec2_elastic_ips")
+    resource = relationship("EC2Resource", back_populates="elastic_ips")
+    costs = relationship("EC2EIPCost", back_populates="eip", cascade="all, delete-orphan")
+
+
+class EC2EIPCost(Base):
+    __tablename__ = "ec2_eip_costs"
+    __table_args__ = (
+        UniqueConstraint('eip_id', 'usage_date', name='uq_ec2_eip_costs_unique'),
+        {"schema": "cloudcost"}
+    )
+
+    eip_cost_id = Column(BigInteger, primary_key=True, autoincrement=True)
+    eip_id = Column(BigInteger, ForeignKey("cloudcost.ec2_elastic_ips.eip_id", ondelete="CASCADE"), nullable=False)
+    usage_date = Column(Date, nullable=False, index=True)
+    hours_idle = Column(Float, nullable=False, default=0)
+    amount_usd = Column(Numeric(14, 6), nullable=False, default=0)
+    currency_src = Column(Text, nullable=False, default='USD')
+
+    eip = relationship("EC2ElasticIP", back_populates="costs")
+
+
+class EC2EBSVolume(Base):
+    __tablename__ = "ec2_ebs_volumes"
+    __table_args__ = {"schema": "cloudcost"}
+
+    ebs_volume_id = Column(BigInteger, primary_key=True, autoincrement=True)
+    ec2_resource_id = Column(BigInteger, ForeignKey("cloudcost.ec2_resources.ec2_resource_id", ondelete="CASCADE"), nullable=False)
+    volume_id = Column(String(32), nullable=False, unique=True)
+    volume_type = Column(Text, nullable=False)
+    size_gb = Column(Integer, nullable=False)
+    iops = Column(Integer)
+    throughput_mbps = Column(Integer)
+    state = Column(Text, nullable=False, default='in-use')
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    resource = relationship("EC2Resource", back_populates="ebs_volumes")
+    snapshots = relationship("EC2EBSSnapshot", back_populates="volume")
+
+
+class EC2EBSSnapshot(Base):
+    __tablename__ = "ec2_ebs_snapshots"
+    __table_args__ = {"schema": "cloudcost"}
+
+    ebs_snapshot_id = Column(BigInteger, primary_key=True, autoincrement=True)
+    ebs_volume_id = Column(BigInteger, ForeignKey("cloudcost.ec2_ebs_volumes.ebs_volume_id", ondelete="SET NULL"))
+    ec2_resource_id = Column(BigInteger, ForeignKey("cloudcost.ec2_resources.ec2_resource_id", ondelete="SET NULL"))
+    snapshot_id = Column(String(32), nullable=False, unique=True)
+    size_gb = Column(Integer, nullable=False)
+    snapshot_date = Column(Date, nullable=False)
+    age_days = Column(Integer)
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+
+    volume = relationship("EC2EBSVolume", back_populates="snapshots")
+    resource = relationship("EC2Resource", back_populates="snapshots")
 
 # =======================
 # 2) Lambda
@@ -276,7 +361,7 @@ class S3Cost(Base):
 class ALBResource(Base):
     __tablename__ = "alb_resources"
     __table_args__ = (
-        UniqueConstraint('account_id', 'region', 'lb_name', name='uq_alb_resources_unique'),
+        UniqueConstraint('account_id', 'region', 'alb_name', name='uq_alb_resources_unique'),
         {"schema": "cloudcost"}
     )
 
@@ -284,10 +369,12 @@ class ALBResource(Base):
     profile_id = Column(BigInteger, ForeignKey("cloudcost.user_profiles.profile_id"), nullable=False, index=True)
     account_id = Column(String(12), nullable=False)
     region = Column(Text, nullable=False)
-    lb_name = Column(Text, nullable=False)
-    lb_arn = Column(Text)
-    dns_name = Column(Text)
-    scheme = Column(Text)
+    alb_name = Column(Text, nullable=False)
+    alb_arn = Column(Text)
+    alb_type = Column(Text)
+    state = Column(Text)
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
 
     profile = relationship("UserProfile", back_populates="alb_resources")
     metrics = relationship("ALBMetric", back_populates="resource", cascade="all, delete-orphan")

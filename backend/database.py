@@ -6,6 +6,8 @@ import os
 
 # Load environment variables from .env
 load_dotenv()
+# Also check backend/ folder if run from root
+load_dotenv("backend/.env")
 
 # Fetch individual DB variables from environment
 DB_USER = os.getenv("DB_USER")
@@ -16,6 +18,7 @@ DB_NAME = os.getenv("DB_NAME")
 
 # Construct the SQLAlchemy connection string
 DATABASE_URL = f"postgresql+psycopg2://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}?sslmode=require"
+print(f"DEBUG: DATABASE_URL (masked) = {DATABASE_URL.replace(DB_PASSWORD or '', '****') if DB_PASSWORD else DATABASE_URL}")
 
 engine = create_engine(
     DATABASE_URL,

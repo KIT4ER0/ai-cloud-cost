@@ -22,7 +22,7 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 # Supabase config
-SUPABASE_URL = os.getenv("SUPABASE_URL", "")
+SUPABASE_URL = os.getenv("SUPABASE_URL") or os.getenv("VITE_SUPABASE_URL", "")
 
 # Use HTTPBearer (Supabase sends Bearer tokens)
 security = HTTPBearer()

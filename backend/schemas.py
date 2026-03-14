@@ -72,12 +72,13 @@ class EC2ResourceOut(BaseModel):
     instance_id: str
     instance_type: Optional[str] = None
     state: Optional[str] = None
-    launch_time: Optional[str] = None
+    launch_time: Optional[datetime] = None
     platform: Optional[str] = None
     purchase_option: Optional[str] = None
     on_demand_price_hr: Optional[float] = None
     environment: Optional[str] = None
     usage_pattern: Optional[str] = None
+    has_public_ip: Optional[bool] = None
     class Config:
         from_attributes = True
 
@@ -88,6 +89,8 @@ class EC2MetricOut(BaseModel):
     cpu_p99: Optional[float] = None
     network_in: Optional[float] = None
     network_out: Optional[float] = None
+    network_egress_gb: Optional[float] = None
+    network_cross_az_gb: Optional[float] = None
     hours_running: Optional[float] = None
     class Config:
         from_attributes = True
@@ -164,10 +167,10 @@ class ALBResourceOut(BaseModel):
     profile_id: int
     account_id: str
     region: str
-    lb_name: str
-    lb_arn: Optional[str] = None
-    dns_name: Optional[str] = None
-    scheme: Optional[str] = None
+    alb_name: str
+    alb_arn: Optional[str] = None
+    alb_type: Optional[str] = None
+    state: Optional[str] = None
     class Config:
         from_attributes = True
 
