@@ -30,6 +30,11 @@ CREATE TABLE IF NOT EXISTS ec2_resources (
   instance_type   TEXT,
   state           TEXT,
   launch_time     TIMESTAMP,
+  platform        TEXT,
+  purchase_option TEXT,
+  on_demand_price_hr DOUBLE PRECISION,
+  environment     TEXT,
+  usage_pattern   TEXT,
   UNIQUE (account_id, region, instance_id)
 );
 
@@ -38,6 +43,8 @@ CREATE TABLE IF NOT EXISTS ec2_metrics (
   ec2_resource_id     BIGINT NOT NULL REFERENCES ec2_resources(ec2_resource_id) ON DELETE CASCADE,
   metric_date         DATE NOT NULL,
   cpu_utilization     DOUBLE PRECISION,
+  cpu_max             DOUBLE PRECISION,
+  cpu_p99             DOUBLE PRECISION,
   network_in          BIGINT,
   network_out         BIGINT,
   hours_running       DOUBLE PRECISION,

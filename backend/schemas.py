@@ -73,12 +73,19 @@ class EC2ResourceOut(BaseModel):
     instance_type: Optional[str] = None
     state: Optional[str] = None
     launch_time: Optional[str] = None
+    platform: Optional[str] = None
+    purchase_option: Optional[str] = None
+    on_demand_price_hr: Optional[float] = None
+    environment: Optional[str] = None
+    usage_pattern: Optional[str] = None
     class Config:
         from_attributes = True
 
 class EC2MetricOut(BaseModel):
     metric_date: str
     cpu_utilization: Optional[float] = None
+    cpu_max: Optional[float] = None
+    cpu_p99: Optional[float] = None
     network_in: Optional[float] = None
     network_out: Optional[float] = None
     hours_running: Optional[float] = None

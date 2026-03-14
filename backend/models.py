@@ -45,6 +45,11 @@ class EC2Resource(Base):
     instance_type = Column(Text)
     state = Column(Text)
     launch_time = Column(DateTime)
+    platform = Column(Text)
+    purchase_option = Column(Text)
+    on_demand_price_hr = Column(Float)
+    environment = Column(Text)
+    usage_pattern = Column(Text)
 
     profile = relationship("UserProfile", back_populates="ec2_resources")
     metrics = relationship("EC2Metric", back_populates="resource", cascade="all, delete-orphan")
@@ -61,6 +66,8 @@ class EC2Metric(Base):
     ec2_resource_id = Column(BigInteger, ForeignKey("cloudcost.ec2_resources.ec2_resource_id", ondelete="CASCADE"), nullable=False)
     metric_date = Column(Date, nullable=False, index=True)
     cpu_utilization = Column(Float)          # % → DOUBLE PRECISION
+    cpu_max = Column(Float)
+    cpu_p99 = Column(Float)
     network_in = Column(BigInteger)           # bytes → BIGINT
     network_out = Column(BigInteger)          # bytes → BIGINT
     hours_running = Column(Float)             # hours -> DOUBLE PRECISION
