@@ -152,6 +152,11 @@ CREATE TABLE IF NOT EXISTS s3_resources (
   region         TEXT NOT NULL,
   bucket_name    TEXT NOT NULL,
   storage_class  TEXT NOT NULL,
+  bucket_arn     TEXT,
+  is_versioning_enabled BOOLEAN DEFAULT FALSE,
+  tags           JSONB,
+  created_at     TIMESTAMPTZ DEFAULT NOW(),
+  updated_at     TIMESTAMPTZ DEFAULT NOW(),
   UNIQUE (account_id, region, bucket_name)
 );
 
@@ -164,6 +169,10 @@ CREATE TABLE IF NOT EXISTS s3_metrics (
   get_requests        BIGINT,
   put_requests        BIGINT,
   bytes_downloaded    BIGINT,
+  bytes_uploaded      BIGINT,
+  delete_requests     BIGINT,
+  list_requests       BIGINT,
+  created_at          TIMESTAMPTZ DEFAULT NOW(),
   UNIQUE (s3_resource_id, metric_date)
 );
 
@@ -174,6 +183,9 @@ CREATE TABLE IF NOT EXISTS s3_costs (
   usage_type      TEXT NOT NULL DEFAULT 'total',
   amount_usd      NUMERIC(14,6) NOT NULL DEFAULT 0,
   currency_src    TEXT NOT NULL DEFAULT 'USD',
+  unit            TEXT,
+  cost_type       TEXT DEFAULT 'unblended',
+  created_at      TIMESTAMPTZ DEFAULT NOW(),
   UNIQUE (s3_resource_id, usage_date, usage_type)
 );
 

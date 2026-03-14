@@ -212,6 +212,11 @@ class S3Resource(Base):
     region = Column(Text, nullable=False)
     bucket_name = Column(Text, nullable=False)
     storage_class = Column(Text, nullable=False, default="Standard")
+    bucket_arn = Column(Text)
+    is_versioning_enabled = Column(Boolean, default=False)
+    tags = Column(JSONB)
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
 
     profile = relationship("UserProfile", back_populates="s3_resources")
     metrics = relationship("S3Metric", back_populates="resource", cascade="all, delete-orphan")
@@ -232,6 +237,10 @@ class S3Metric(Base):
     get_requests = Column(BigInteger)          # count → BIGINT
     put_requests = Column(BigInteger)          # count → BIGINT
     bytes_downloaded = Column(BigInteger)      # bytes → BIGINT
+    bytes_uploaded = Column(BigInteger)
+    delete_requests = Column(BigInteger)
+    list_requests = Column(BigInteger)
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
 
     resource = relationship("S3Resource", back_populates="metrics")
 
@@ -248,6 +257,9 @@ class S3Cost(Base):
     usage_type = Column(Text, nullable=False, default='total')
     amount_usd = Column(Numeric(14, 6), nullable=False, default=0)
     currency_src = Column(Text, nullable=False, default='USD')
+    unit = Column(Text)
+    cost_type = Column(Text, default='unblended')
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
 
     resource = relationship("S3Resource", back_populates="costs")
 
