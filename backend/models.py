@@ -413,6 +413,7 @@ class ALBResource(Base):
     alb_arn = Column(Text)
     alb_type = Column(Text)
     state = Column(Text)
+    dns_name = Column(Text)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
     updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
 

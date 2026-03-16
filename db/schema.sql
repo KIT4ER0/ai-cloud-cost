@@ -325,6 +325,7 @@ CREATE TABLE IF NOT EXISTS alb_resources (
   alb_arn         TEXT,
   alb_type        TEXT,
   state           TEXT,
+  dns_name        TEXT,
   created_at      TIMESTAMPTZ DEFAULT NOW(),
   updated_at      TIMESTAMPTZ DEFAULT NOW(),
   UNIQUE (account_id, region, alb_name)
