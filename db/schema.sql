@@ -89,10 +89,11 @@ CREATE TABLE IF NOT EXISTS ec2_eip_costs (
   eip_cost_id BIGSERIAL PRIMARY KEY,
   eip_id      BIGINT NOT NULL REFERENCES ec2_elastic_ips(eip_id) ON DELETE CASCADE,
   usage_date  DATE NOT NULL,
+  usage_type  TEXT NOT NULL DEFAULT 'total',
   hours_idle  DOUBLE PRECISION NOT NULL DEFAULT 0,
   amount_usd  NUMERIC(14, 6) NOT NULL DEFAULT 0,
   currency_src TEXT NOT NULL DEFAULT 'USD',
-  UNIQUE (eip_id, usage_date)
+  UNIQUE (eip_id, usage_date, usage_type)
 );
 
 CREATE INDEX IF NOT EXISTS idx_ec2_eips_profile ON ec2_elastic_ips(profile_id);
@@ -210,6 +211,54 @@ CREATE INDEX IF NOT EXISTS idx_rds_resources_acct_region ON rds_resources(accoun
 CREATE INDEX IF NOT EXISTS idx_rds_resources_profile     ON rds_resources(profile_id);
 CREATE INDEX IF NOT EXISTS idx_rds_metrics_date          ON rds_metrics(metric_date);
 CREATE INDEX IF NOT EXISTS idx_rds_costs_date            ON rds_costs(usage_date);
+
+-- Apply alter tables for additional fields (if table already exists)
+ALTER TABLE rds_resources 
+  ADD COLUMN IF NOT EXISTS engine_version TEXT,
+  ADD COLUMN IF NOT EXISTS multi_az BOOLEAN DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS environment TEXT,
+  ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'available',
+  ADD COLUMN IF NOT EXISTS pricing_model TEXT DEFAULT 'on-demand',
+  ADD COLUMN IF NOT EXISTS team TEXT,
+  ADD COLUMN IF NOT EXISTS created_date DATE;
+
+ALTER TABLE rds_metrics 
+  ADD COLUMN IF NOT EXISTS freeable_memory BIGINT,
+  ADD COLUMN IF NOT EXISTS swap_usage BIGINT,
+  ADD COLUMN IF NOT EXISTS read_iops DOUBLE PRECISION,
+  ADD COLUMN IF NOT EXISTS write_iops DOUBLE PRECISION,
+  ADD COLUMN IF NOT EXISTS read_latency DOUBLE PRECISION,
+  ADD COLUMN IF NOT EXISTS write_latency DOUBLE PRECISION;
+
+-- Note: In Postgres you cannot easily add a constraint 'IF NOT EXISTS' directly in ALTER TABLE. 
+-- However, we can drop it first then add it to make it idempotent in a schema file.
+ALTER TABLE rds_costs DROP CONSTRAINT IF EXISTS chk_usage_type;
+ALTER TABLE rds_costs ADD CONSTRAINT chk_usage_type
+  CHECK (usage_type IN (
+    'total', 'compute', 'storage',
+    'io', 'backup', 'data_transfer'
+  ));
+
+
+CREATE TABLE IF NOT EXISTS rds_reserved_instances (
+  ri_id            BIGSERIAL PRIMARY KEY,
+  profile_id       BIGINT NOT NULL REFERENCES user_profiles(profile_id),
+  account_id       VARCHAR(12) NOT NULL,
+  ri_instance_id   TEXT NOT NULL UNIQUE,   -- AWS RI ID
+  region           TEXT NOT NULL,
+  instance_class   TEXT NOT NULL,
+  engine           TEXT NOT NULL,
+  multi_az         BOOLEAN DEFAULT FALSE,
+  term_years       INTEGER NOT NULL,       -- 1 or 3
+  payment_option   TEXT NOT NULL,          -- no-upfront/partial-upfront/all-upfront
+  start_date       DATE NOT NULL,
+  end_date         DATE NOT NULL,
+  hourly_rate      NUMERIC(10,6),
+  upfront_cost     NUMERIC(14,6),
+  -- link กับ instance ที่ใช้งาน (nullable = ยังไม่ได้ assign)
+  rds_resource_id  BIGINT REFERENCES rds_resources(rds_resource_id)
+);
+
 
 -- =========================
 -- 4) S3

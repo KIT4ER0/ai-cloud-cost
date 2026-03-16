@@ -53,6 +53,29 @@ def get_ec2_metrics(
         ) for r in rows
     ]
 
+@router.get("/ec2/eips", response_model=List[schemas.EC2ElasticIPOut])
+def get_ec2_eips(
+    current_user: models.UserProfile = Depends(auth.get_current_user),
+    db: Session = Depends(database.get_db),
+):
+    eips = db.query(models.EC2ElasticIP).filter(
+        models.EC2ElasticIP.profile_id == current_user.profile_id
+    ).all()
+    
+    results = []
+    for eip in eips:
+        # Get the latest daily cost for this EIP
+        latest_cost = db.query(models.EC2EIPCost).filter(
+            models.EC2EIPCost.eip_id == eip.eip_id,
+            models.EC2EIPCost.usage_type == "total"
+        ).order_by(models.EC2EIPCost.usage_date.desc()).first()
+        
+        eip_out = schemas.EC2ElasticIPOut.from_orm(eip)
+        eip_out.current_cost_usd = float(latest_cost.amount_usd) if latest_cost else 0.0
+        results.append(eip_out)
+        
+    return results
+
 # ---- Lambda ----
 
 @router.get("/lambda", response_model=List[schemas.LambdaResourceOut])
@@ -117,13 +140,14 @@ def get_rds_metrics(
             metric_date=str(r.metric_date),
             cpu_utilization=r.cpu_utilization,
             database_connections=r.database_connections,
-            freeable_memory=r.freeable_memory,
             free_storage_space=r.free_storage_space,
-            disk_queue_depth=r.disk_queue_depth,
-            ebs_byte_balance_pct=r.ebs_byte_balance_pct,
-            ebs_io_balance_pct=r.ebs_io_balance_pct,
-            cpu_credit_balance=r.cpu_credit_balance,
-            cpu_credit_usage=r.cpu_credit_usage,
+            data_transfer=r.data_transfer,
+            freeable_memory=r.freeable_memory,
+            swap_usage=r.swap_usage,
+            read_iops=r.read_iops,
+            write_iops=r.write_iops,
+            read_latency=r.read_latency,
+            write_latency=r.write_latency,
         ) for r in rows
     ]
 

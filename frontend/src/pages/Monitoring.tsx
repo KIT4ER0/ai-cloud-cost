@@ -42,10 +42,11 @@ const serviceMonitoringConfig = {
         { title: "Objects", subtitle: "count", dataKey: "number_of_objects" },
     ],
     RDS: [
-        { title: "CPU Utilization", subtitle: "P95 (%)", dataKey: "cpu_utilization" },
-        { title: "DB Connections", subtitle: "count (max)", dataKey: "database_connections" },
-        { title: "Freeable Memory", subtitle: "bytes (min)", dataKey: "freeable_memory" },
-        { title: "Free Storage", subtitle: "bytes (min)", dataKey: "free_storage_space" },
+        { title: "CPU Utilization", subtitle: "%", dataKey: "cpu_utilization" },
+        { title: "Database Connections", subtitle: "count", dataKey: "database_connections" },
+        { title: "Free Storage Space", subtitle: "bytes", dataKey: "free_storage_space" },
+        { title: "Read IOPS", subtitle: "count/s", dataKey: "read_iops" },
+        { title: "Write IOPS", subtitle: "count/s", dataKey: "write_iops" },
     ],
     ALB: [
         { title: "Request Count", subtitle: "count (sum)", dataKey: "request_count" },
@@ -111,32 +112,90 @@ function MonitoringChart({ title, subtitle, data, color = "hsl(var(--primary))" 
 
 // ---- Per-service table components ----
 
-function EC2Table({ resources, selectedId, onRowClick }: { resources: any[], selectedId: number | null, onRowClick: (id: number) => void }) {
+function EC2Table({ resources, eips, selectedId, onRowClick }: { resources: any[], eips: any[], selectedId: number | null, onRowClick: (id: number) => void }) {
     return (
-        <Table>
-            <TableHeader>
-                <TableRow>
-                    <TableHead className="w-12"></TableHead>
-                    <TableHead>Instance ID</TableHead>
-                    <TableHead>Instance Type</TableHead>
-                    <TableHead>State</TableHead>
-                    <TableHead>Region</TableHead>
-                </TableRow>
-            </TableHeader>
-            <TableBody>
-                {resources.map((r) => (
-                    <TableRow key={r.ec2_resource_id} className="cursor-pointer hover:bg-muted/50" onClick={() => onRowClick(r.ec2_resource_id)}>
-                        <TableCell><Checkbox checked={selectedId === r.ec2_resource_id} onCheckedChange={() => onRowClick(r.ec2_resource_id)} /></TableCell>
-                        <TableCell className="font-mono text-sm">{r.instance_id}</TableCell>
-                        <TableCell>{r.instance_type || "-"}</TableCell>
-                        <TableCell>
-                            <Badge variant="outline" className={r.state === "running" ? "border-green-500 text-green-600" : "border-slate-400 text-slate-500"}>{r.state || "unknown"}</Badge>
-                        </TableCell>
-                        <TableCell><Badge variant="outline" className="border-primary text-primary">{r.region}</Badge></TableCell>
-                    </TableRow>
-                ))}
-            </TableBody>
-        </Table>
+        <div className="space-y-6">
+            <div className="space-y-2">
+                <h3 className="px-4 text-lg font-semibold">EC2 Instances</h3>
+                <Table>
+                    <TableHeader>
+                        <TableRow>
+                            <TableHead className="w-12"></TableHead>
+                            <TableHead>Instance ID</TableHead>
+                            <TableHead>Instance Type</TableHead>
+                            <TableHead>State</TableHead>
+                            <TableHead>Public IP</TableHead>
+                            <TableHead>Region</TableHead>
+                        </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                        {resources.map((r) => {
+                            const associatedEip = eips.find(e => e.ec2_resource_id === r.ec2_resource_id);
+                            return (
+                                <TableRow key={r.ec2_resource_id} className="cursor-pointer hover:bg-muted/50" onClick={() => onRowClick(r.ec2_resource_id)}>
+                                    <TableCell><Checkbox checked={selectedId === r.ec2_resource_id} onCheckedChange={() => onRowClick(r.ec2_resource_id)} /></TableCell>
+                                    <TableCell className="font-mono text-sm">{r.instance_id}</TableCell>
+                                    <TableCell>{r.instance_type || "-"}</TableCell>
+                                    <TableCell>
+                                        <Badge variant="outline" className={r.state === "running" ? "border-green-500 text-green-600" : "border-slate-400 text-slate-500"}>{r.state || "unknown"}</Badge>
+                                    </TableCell>
+                                    <TableCell>{associatedEip ? associatedEip.public_ip : (r.has_public_ip ? "Yes" : "No")}</TableCell>
+                                    <TableCell><Badge variant="outline" className="border-primary text-primary">{r.region}</Badge></TableCell>
+                                </TableRow>
+                            );
+                        })}
+                    </TableBody>
+                </Table>
+            </div>
+
+            <div className="space-y-2 pt-4 border-t">
+                <h3 className="px-4 text-lg font-semibold flex items-center gap-2">
+                    Elastic IPs
+                    <Badge variant="secondary" className="font-normal">
+                        {eips.filter(e => e.is_idle).length} Idle
+                    </Badge>
+                </h3>
+                <Table>
+                    <TableHeader>
+                        <TableRow>
+                            <TableHead>Public IP</TableHead>
+                            <TableHead>Allocation ID</TableHead>
+                            <TableHead>Status</TableHead>
+                            <TableHead>Daily Cost ($)</TableHead>
+                            <TableHead>Associated Resource</TableHead>
+                            <TableHead>Region</TableHead>
+                        </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                        {eips.map((eip) => {
+                            const associatedInstance = resources.find(r => r.ec2_resource_id === eip.ec2_resource_id);
+                            return (
+                                <TableRow key={eip.eip_id}>
+                                    <TableCell className="font-mono font-medium">{eip.public_ip}</TableCell>
+                                    <TableCell className="font-mono text-xs text-muted-foreground">{eip.allocation_id}</TableCell>
+                                    <TableCell>
+                                        <Badge variant={eip.is_idle ? "destructive" : "outline"} className={!eip.is_idle ? "border-green-500 text-green-600" : ""}>
+                                            {eip.is_idle ? "Idle (Charging)" : "In Use"}
+                                        </Badge>
+                                    </TableCell>
+                                    <TableCell className="font-medium text-destructive">
+                                        {eip.current_cost_usd > 0 ? `$${eip.current_cost_usd.toFixed(3)}` : "-"}
+                                    </TableCell>
+                                    <TableCell>
+                                        {associatedInstance ? (
+                                            <span className="text-sm font-mono">{associatedInstance.instance_id}</span>
+                                        ) : (
+                                            <span className="text-sm text-muted-foreground">-</span>
+                                        )}
+                                    </TableCell>
+                                    <TableCell><Badge variant="outline" className="border-primary text-primary">{eip.region}</Badge></TableCell>
+                                </TableRow>
+                            );
+                        })}
+                    </TableBody>
+                </Table>
+            </div>
+        </div>
     )
 }
 
@@ -259,16 +318,25 @@ export default function Monitoring() {
     const [selectedMonthNum, setSelectedMonthNum] = useState<string | null>(null)
     const [loadingResources, setLoadingResources] = useState(false)
     const [loadingMetrics, setLoadingMetrics] = useState(false)
+    const [eips, setEips] = useState<any[]>([])
 
-    // Fetch resources when service changes
+    // Fetch resources and EIPs when service changes
     const fetchResources = useCallback(async (service: ServiceType) => {
         setLoadingResources(true)
         try {
             const data = await api.monitoring.getResources(service)
             setResources(data)
+
+            if (service === "EC2") {
+                const eipData = await api.monitoring.getEIPs()
+                setEips(eipData)
+            } else {
+                setEips([])
+            }
         } catch (err) {
             console.error("Failed to load resources:", err)
             setResources([])
+            setEips([])
         } finally {
             setLoadingResources(false)
         }
@@ -364,31 +432,27 @@ export default function Monitoring() {
         if (loadingResources) {
             return (
                 <div className="flex items-center justify-center py-12">
-                    <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-                    <span className="ml-2 text-muted-foreground">Loading resources...</span>
+                    <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                    <span className="ml-2 text-muted-foreground">กำลังโหลดรายการทรัพยากร...</span>
                 </div>
             )
         }
-        if (resources.length === 0) {
+
+        if (resources.length === 0 && (selectedService !== "EC2" || eips.length === 0)) {
             return (
-                <div className="flex items-center justify-center py-12 text-muted-foreground">
-                    No {selectedService} resources found in the database.
+                <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+                    <p>ไม่พบรายการทรัพยากรสำหรับบริการนี้</p>
                 </div>
             )
         }
+
         switch (selectedService) {
-            case "EC2":
-                return <EC2Table resources={resources} selectedId={selectedResourceId} onRowClick={handleRowClick} />
-            case "Lambda":
-                return <LambdaTable resources={resources} selectedId={selectedResourceId} onRowClick={handleRowClick} />
-            case "S3":
-                return <S3Table resources={resources} selectedId={selectedResourceId} onRowClick={handleRowClick} />
-            case "RDS":
-                return <RDSTable resources={resources} selectedId={selectedResourceId} onRowClick={handleRowClick} />
-            case "ALB":
-                return <ALBTable resources={resources} selectedId={selectedResourceId} onRowClick={handleRowClick} />
-            default:
-                return null
+            case "EC2": return <EC2Table resources={resources} eips={eips} selectedId={selectedResourceId} onRowClick={handleRowClick} />
+            case "Lambda": return <LambdaTable resources={resources} selectedId={selectedResourceId} onRowClick={handleRowClick} />
+            case "S3": return <S3Table resources={resources} selectedId={selectedResourceId} onRowClick={handleRowClick} />
+            case "RDS": return <RDSTable resources={resources} selectedId={selectedResourceId} onRowClick={handleRowClick} />
+            case "ALB": return <ALBTable resources={resources} selectedId={selectedResourceId} onRowClick={handleRowClick} />
+            default: return null
         }
     }
 

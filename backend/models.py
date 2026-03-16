@@ -23,6 +23,7 @@ class UserProfile(Base):
     ec2_elastic_ips = relationship("EC2ElasticIP", back_populates="profile", cascade="all, delete-orphan")
     lambda_resources = relationship("LambdaResource", back_populates="profile", cascade="all, delete-orphan")
     rds_resources = relationship("RDSResource", back_populates="profile", cascade="all, delete-orphan")
+    rds_reserved_instances = relationship("RDSReservedInstance", back_populates="profile", cascade="all, delete-orphan")
     s3_resources = relationship("S3Resource", back_populates="profile", cascade="all, delete-orphan")
     alb_resources = relationship("ALBResource", back_populates="profile", cascade="all, delete-orphan")
     recommendations = relationship("Recommendation", back_populates="profile", cascade="all, delete-orphan")
@@ -126,13 +127,14 @@ class EC2ElasticIP(Base):
 class EC2EIPCost(Base):
     __tablename__ = "ec2_eip_costs"
     __table_args__ = (
-        UniqueConstraint('eip_id', 'usage_date', name='uq_ec2_eip_costs_unique'),
+        UniqueConstraint('eip_id', 'usage_date', 'usage_type', name='uq_ec2_eip_costs_unique'),
         {"schema": "cloudcost"}
     )
 
     eip_cost_id = Column(BigInteger, primary_key=True, autoincrement=True)
     eip_id = Column(BigInteger, ForeignKey("cloudcost.ec2_elastic_ips.eip_id", ondelete="CASCADE"), nullable=False)
     usage_date = Column(Date, nullable=False, index=True)
+    usage_type = Column(Text, nullable=False, default='total')
     hours_idle = Column(Float, nullable=False, default=0)
     amount_usd = Column(Numeric(14, 6), nullable=False, default=0)
     currency_src = Column(Text, nullable=False, default='USD')
@@ -250,10 +252,18 @@ class RDSResource(Base):
     instance_class = Column(Text)
     storage_type = Column(Text)
     allocated_gb = Column(Integer)
+    engine_version = Column(Text)
+    multi_az = Column(Boolean, default=False)
+    environment = Column(Text)
+    status = Column(Text, default='available')
+    pricing_model = Column(Text, default='on-demand')
+    team = Column(Text)
+    created_date = Column(Date)
 
     profile = relationship("UserProfile", back_populates="rds_resources")
     metrics = relationship("RDSMetric", back_populates="resource", cascade="all, delete-orphan")
     costs = relationship("RDSCost", back_populates="resource", cascade="all, delete-orphan")
+    reserved_instances = relationship("RDSReservedInstance", back_populates="resource")
 
 class RDSMetric(Base):
     __tablename__ = "rds_metrics"
@@ -269,6 +279,12 @@ class RDSMetric(Base):
     database_connections = Column(BigInteger)  # count → BIGINT
     free_storage_space = Column(BigInteger)    # bytes → BIGINT
     data_transfer = Column(BigInteger)
+    freeable_memory = Column(BigInteger)
+    swap_usage = Column(BigInteger)
+    read_iops = Column(Float)
+    write_iops = Column(Float)
+    read_latency = Column(Float)
+    write_latency = Column(Float)
 
     resource = relationship("RDSResource", back_populates="metrics")
 
@@ -287,6 +303,29 @@ class RDSCost(Base):
     currency_src = Column(Text, nullable=False, default='USD')
 
     resource = relationship("RDSResource", back_populates="costs")
+
+class RDSReservedInstance(Base):
+    __tablename__ = "rds_reserved_instances"
+    __table_args__ = {"schema": "cloudcost"}
+
+    ri_id = Column(BigInteger, primary_key=True, autoincrement=True)
+    profile_id = Column(BigInteger, ForeignKey("cloudcost.user_profiles.profile_id"), nullable=False, index=True)
+    account_id = Column(String(12), nullable=False)
+    ri_instance_id = Column(Text, nullable=False, unique=True)
+    region = Column(Text, nullable=False)
+    instance_class = Column(Text, nullable=False)
+    engine = Column(Text, nullable=False)
+    multi_az = Column(Boolean, default=False)
+    term_years = Column(Integer, nullable=False)
+    payment_option = Column(Text, nullable=False)
+    start_date = Column(Date, nullable=False)
+    end_date = Column(Date, nullable=False)
+    hourly_rate = Column(Numeric(10, 6))
+    upfront_cost = Column(Numeric(14, 6))
+    rds_resource_id = Column(BigInteger, ForeignKey("cloudcost.rds_resources.rds_resource_id"))
+
+    profile = relationship("UserProfile", back_populates="rds_reserved_instances")
+    resource = relationship("RDSResource", back_populates="reserved_instances")
 
 # =======================
 # 4) S3

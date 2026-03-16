@@ -95,6 +95,21 @@ class EC2MetricOut(BaseModel):
     class Config:
         from_attributes = True
 
+class EC2ElasticIPOut(BaseModel):
+    eip_id: int
+    profile_id: int
+    account_id: str
+    region: str
+    allocation_id: str
+    public_ip: str
+    ec2_resource_id: Optional[int] = None
+    association_id: Optional[str] = None
+    is_idle: Optional[bool] = None
+    idle_since: Optional[datetime] = None
+    current_cost_usd: Optional[float] = 0.0
+    class Config:
+        from_attributes = True
+
 # --- Lambda ---
 class LambdaResourceOut(BaseModel):
     lambda_resource_id: int
@@ -137,6 +152,12 @@ class RDSMetricOut(BaseModel):
     database_connections: Optional[float] = None
     free_storage_space: Optional[float] = None
     data_transfer: Optional[float] = None
+    freeable_memory: Optional[float] = None
+    swap_usage: Optional[float] = None
+    read_iops: Optional[float] = None
+    write_iops: Optional[float] = None
+    read_latency: Optional[float] = None
+    write_latency: Optional[float] = None
     class Config:
         from_attributes = True
 

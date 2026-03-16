@@ -96,62 +96,6 @@ MOCK_INSTANCES = [
         "has_public_ip": False,
         "eip": None,
     },
-    {
-        "id": "i-mock-worker-01",
-        "type": "c6i.xlarge",
-        "platform": "Linux",
-        "purchase_option": "OnDemand",
-        "environment": "staging",
-        "usage_pattern": "business_hours",
-        "cpu_base": 10.0,
-        "cpu_range": 70.0,
-        # EBS
-        "ebs_volume_id": "vol-mock-worker-01",
-        "ebs_type": "gp3",
-        "ebs_size_gb": 100,
-        "ebs_iops": 3000,
-        "ebs_throughput_mbps": 125,
-        "snapshot_id": "snap-mock-worker-01",
-        "snapshot_gb": 50,
-        # Network
-        "egress_gb_per_day": 10.0,
-        "cross_az_gb_per_day": 2.0,
-        # IP
-        "has_public_ip": True,
-        "eip": {
-            "allocation_id": "eipalloc-mock-worker-01",
-            "public_ip": "54.251.10.22",
-            "is_idle": False,
-        },
-    },
-    {
-        "id": "i-mock-test-01",
-        "type": "t3.micro",
-        "platform": "Linux",
-        "purchase_option": "OnDemand",
-        "environment": "dev",
-        "usage_pattern": "business_hours",
-        "cpu_base": 1.0,
-        "cpu_range": 4.0,
-        # EBS
-        "ebs_volume_id": "vol-mock-test-01",
-        "ebs_type": "gp2",
-        "ebs_size_gb": 20,
-        "ebs_iops": 0,
-        "ebs_throughput_mbps": None,
-        "snapshot_id": None,
-        "snapshot_gb": 0,
-        # Network
-        "egress_gb_per_day": 0.5,
-        "cross_az_gb_per_day": 0.0,
-        # IP — มี idle EIP ที่ไม่ได้ใช้
-        "has_public_ip": False,
-        "eip": {
-            "allocation_id": "eipalloc-mock-test-01",
-            "public_ip": "54.251.10.33",
-            "is_idle": True,   # ← จะโดน charge $0.005/hr
-        },
-    },
 ]
 
 # ──────────────────────────────────────────────
@@ -177,7 +121,7 @@ def _hours_running(usage_pattern: str, date) -> float:
 
 
 def _build_cost_rows(resource_id: int, inst: dict, days: int = 90) -> list[dict]:
-    rows = []
+    all_rows = []
     hourly_price = INSTANCE_PRICING.get(inst["type"], 0.05)
     ebs_type = inst["ebs_type"]
 
@@ -187,57 +131,80 @@ def _build_cost_rows(resource_id: int, inst: dict, days: int = 90) -> list[dict]
 
     for days_ago in range(days):
         dt = (datetime.now(timezone.utc) - timedelta(days=days_ago)).date()
+        dt_iso = dt.isoformat()
         hours = _hours_running(inst["usage_pattern"], dt)
         is_active = hours > 0
 
-        def row(usage_type: str, amount: float) -> dict:
-            return {
+        daily_rows = []
+        def add_row(usage_type: str, amount: float):
+            daily_rows.append({
                 "ec2_resource_id": resource_id,
-                "usage_date": dt.isoformat(),
+                "usage_date": dt_iso,
                 "usage_type": usage_type,
                 "amount_usd": round(amount, 6),
                 "currency_src": "USD",
-            }
+            })
 
         # Compute
-        rows.append(row("compute", hourly_price * hours))
+        add_row("compute", hourly_price * hours)
 
         # EBS Volume
-        rows.append(row("ebs_volume", ebs_daily))
+        add_row("ebs_volume", ebs_daily)
 
         # EBS IOPS (io1/io2 เท่านั้น)
         if ebs_iops_daily > 0:
-            rows.append(row("ebs_iops", ebs_iops_daily))
+            add_row("ebs_iops", ebs_iops_daily)
 
         # EBS Snapshot
         if snapshot_daily > 0:
-            rows.append(row("ebs_snapshot", snapshot_daily))
+            add_row("ebs_snapshot", snapshot_daily)
 
         # Network (เฉพาะวันที่ทำงาน)
         if is_active:
             egress_gb = inst["egress_gb_per_day"] * random.uniform(0.7, 1.3)
-            rows.append(row("network_egress", egress_gb * NETWORK_EGRESS_PRICE_PER_GB))
+            add_row("network_egress", egress_gb * NETWORK_EGRESS_PRICE_PER_GB)
 
             if inst["cross_az_gb_per_day"] > 0:
                 cross_gb = inst["cross_az_gb_per_day"] * random.uniform(0.5, 1.5)
-                rows.append(row("network_cross_az", cross_gb * NETWORK_CROSS_AZ_PRICE_PER_GB))
+                add_row("network_cross_az", cross_gb * NETWORK_CROSS_AZ_PRICE_PER_GB)
 
         # Public IPv4
         if inst["has_public_ip"]:
-            rows.append(row("public_ipv4", PUBLIC_IPV4_PRICE_PER_HR * 24))
+            add_row("public_ipv4", PUBLIC_IPV4_PRICE_PER_HR * 24)
 
-    return rows
+        # Calculate TOTAL for this day
+        total_usd = sum(r["amount_usd"] for r in daily_rows)
+        add_row("total", total_usd)
+        
+        all_rows.extend(daily_rows)
+
+    return all_rows
 
 
 def _build_eip_cost_rows(eip_id: int, days: int = 90) -> list[dict]:
     rows = []
     for days_ago in range(days):
         dt = (datetime.now(timezone.utc) - timedelta(days=days_ago)).date()
+        dt_iso = dt.isoformat()
+        amount = round(ELASTIC_IP_IDLE_PRICE_PER_HR * 24, 6)
+        
+        # Idle cost row
         rows.append({
             "eip_id": eip_id,
-            "usage_date": dt.isoformat(),
+            "usage_date": dt_iso,
+            "usage_type": "idle_fee",
             "hours_idle": 24.0,
-            "amount_usd": round(ELASTIC_IP_IDLE_PRICE_PER_HR * 24, 6),
+            "amount_usd": amount,
+            "currency_src": "USD",
+        })
+        
+        # Total cost row
+        rows.append({
+            "eip_id": eip_id,
+            "usage_date": dt_iso,
+            "usage_type": "total",
+            "hours_idle": 24.0,
+            "amount_usd": amount,
             "currency_src": "USD",
         })
     return rows
@@ -253,11 +220,23 @@ def mock_smart_sync_ec2_metrics(
 
     logger.info(f"Running MOCK smart sync for account={account_id} region={region}")
 
+    suffix = account_id[-4:]
     launch_time = datetime.now(timezone.utc) - timedelta(days=95)
 
-    for inst in MOCK_INSTANCES:
-        iid = inst["id"]
-        hourly_price = INSTANCE_PRICING.get(inst["type"], 0.05)
+    for inst_base in MOCK_INSTANCES:
+        iid = f"{inst_base['id']}-{suffix}"
+        hourly_price = INSTANCE_PRICING.get(inst_base["type"], 0.05)
+        
+        # Merge basic config with account-specific IDs
+        inst = inst_base.copy()
+        inst["id"] = iid
+        inst["ebs_volume_id"] = f"{inst_base['ebs_volume_id']}-{suffix}"
+        if inst_base.get("snapshot_id"):
+            inst["snapshot_id"] = f"{inst_base['snapshot_id']}-{suffix}"
+        if inst_base.get("eip"):
+            # Deep copy EIP to avoid mutating global MOCK_INSTANCES
+            inst["eip"] = inst_base["eip"].copy()
+            inst["eip"]["allocation_id"] = f"{inst_base['eip']['allocation_id']}-{suffix}"
 
         # ── 1. Upsert EC2Resource ────────────────────────────────────────────
         resource = db.query(models.EC2Resource).filter_by(
@@ -304,6 +283,10 @@ def mock_smart_sync_ec2_metrics(
             )
             db.add(ebs_volume)
             db.flush()
+        else:
+            # Ensure it's linked to the correct resource
+            ebs_volume.ec2_resource_id = resource.ec2_resource_id
+            db.flush()
 
         # ── 3. Upsert EBS Snapshot ───────────────────────────────────────────
         if inst["snapshot_id"]:
@@ -321,6 +304,11 @@ def mock_smart_sync_ec2_metrics(
                     snapshot_date=snapshot_date,
                     age_days=30,
                 ))
+                db.flush()
+            else:
+                # FIX: Update the foreign key to the current resource
+                snapshot.ec2_resource_id = resource.ec2_resource_id
+                snapshot.ebs_volume_id = ebs_volume.ebs_volume_id
                 db.flush()
 
         # ── 4. Upsert Elastic IP ─────────────────────────────────────────────
@@ -408,7 +396,7 @@ def mock_smart_sync_ec2_metrics(
             if eip_cost_rows:
                 stmt = insert(models.EC2EIPCost).values(eip_cost_rows)
                 stmt = stmt.on_conflict_do_update(
-                    index_elements=["eip_id", "usage_date"],
+                    index_elements=["eip_id", "usage_date", "usage_type"],
                     set_={
                         "hours_idle": stmt.excluded.hours_idle,
                         "amount_usd": stmt.excluded.amount_usd,
@@ -423,5 +411,38 @@ def mock_smart_sync_ec2_metrics(
             f"eip={'idle' if inst['eip'] and inst['eip']['is_idle'] else 'ok' if inst['eip'] else 'none'}"
         )
 
+    # ── 8. Standalone Idle EIPs ───────────────────────────────────────────
+    # Create one EIP that is not associated with any instance
+    standalone_allocation_id = f"eipalloc-ghost-{suffix}"
+    standalone_eip = db.query(models.EC2ElasticIP).filter_by(
+        allocation_id=standalone_allocation_id
+    ).first()
+
+    if not standalone_eip:
+        standalone_eip = models.EC2ElasticIP(
+            profile_id=profile_id,
+            account_id=account_id,
+            region=region,
+            allocation_id=standalone_allocation_id,
+            public_ip=f"54.{random.randint(100, 250)}.{random.randint(10, 99)}.{random.randint(1, 254)}",
+            is_idle=True,
+            idle_since=datetime.now(timezone.utc) - timedelta(days=45),
+        )
+        db.add(standalone_eip)
+        db.flush()
+
+    # Generate costs for this standalone EIP
+    eip_cost_rows = _build_eip_cost_rows(standalone_eip.eip_id)
+    if eip_cost_rows:
+        stmt = insert(models.EC2EIPCost).values(eip_cost_rows)
+        stmt = stmt.on_conflict_do_update(
+            index_elements=["eip_id", "usage_date", "usage_type"],
+            set_={
+                "hours_idle": stmt.excluded.hours_idle,
+                "amount_usd": stmt.excluded.amount_usd,
+            },
+        )
+        db.execute(stmt)
+
     db.commit()
-    logger.info("All MOCK EC2 instances synced successfully")
+    logger.info("All MOCK EC2 instances and standalone EIPs synced successfully")

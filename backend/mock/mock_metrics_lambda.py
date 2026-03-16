@@ -56,18 +56,6 @@ def mock_smart_sync_lambda_metrics(db, account_id: str, region: str, profile_id:
             "runtime": "nodejs20.x",
             "description": "Processes uploaded images",
         },
-        {
-            "name": f"mock-scheduled-job-{account_id[-4:]}",
-            "memory_mb": 256,
-            "runtime": "python3.12",
-            "description": "Runs nightly batch jobs",
-        },
-        {
-            "name": f"mock-event-consumer-{account_id[-4:]}",
-            "memory_mb": 1024,
-            "runtime": "nodejs18.x",
-            "description": "Consumes SQS/Kinesis events",
-        },
     ]
 
     try:
@@ -93,11 +81,8 @@ def mock_smart_sync_lambda_metrics(db, account_id: str, region: str, profile_id:
                     function_name=function_name,
                     function_arn=function_arn,
                     runtime=fn["runtime"],
-                    memory_size=memory_mb,
-                    timeout=random.choice([30, 60, 120, 300, 900]),
-                    description=fn["description"],
-                    last_modified=datetime.now(timezone.utc),
-                    tags={"Environment": "Mock", "Project": "CloudCost"},
+                    memory_mb=memory_mb,
+                    timeout_sec=random.choice([30, 60, 120, 300, 900]),
                 )
                 db.add(resource)
                 db.flush()
@@ -112,24 +97,15 @@ def mock_smart_sync_lambda_metrics(db, account_id: str, region: str, profile_id:
 
                 invocations = random.randint(1_000, 500_000)
                 errors = random.randint(0, int(invocations * 0.05))  # up to 5% error rate
-                throttles = random.randint(0, int(invocations * 0.01))  # up to 1% throttle
                 avg_duration_ms = random.uniform(50, 5000)
-                max_duration_ms = avg_duration_ms * random.uniform(1.2, 3.0)
-                min_duration_ms = avg_duration_ms * random.uniform(0.3, 0.9)
-                concurrent_executions = random.randint(1, 200)
-                cold_starts = random.randint(0, int(invocations * 0.02))  # up to 2% cold start
+                duration_p95 = avg_duration_ms * random.uniform(1.2, 3.0)
 
                 metric_rows.append({
                     "lambda_resource_id": resource.lambda_resource_id,
                     "metric_date": dt_iso,
                     "invocations": invocations,
                     "errors": errors,
-                    "throttles": throttles,
-                    "avg_duration_ms": round(avg_duration_ms, 3),
-                    "max_duration_ms": round(max_duration_ms, 3),
-                    "min_duration_ms": round(min_duration_ms, 3),
-                    "concurrent_executions": concurrent_executions,
-                    "cold_starts": cold_starts,
+                    "duration_p95": round(duration_p95, 3),
                 })
 
                 request_cost = _calculate_request_cost(invocations)
@@ -168,12 +144,7 @@ def mock_smart_sync_lambda_metrics(db, account_id: str, region: str, profile_id:
                     set_={
                         "invocations": stmt.excluded.invocations,
                         "errors": stmt.excluded.errors,
-                        "throttles": stmt.excluded.throttles,
-                        "avg_duration_ms": stmt.excluded.avg_duration_ms,
-                        "max_duration_ms": stmt.excluded.max_duration_ms,
-                        "min_duration_ms": stmt.excluded.min_duration_ms,
-                        "concurrent_executions": stmt.excluded.concurrent_executions,
-                        "cold_starts": stmt.excluded.cold_starts,
+                        "duration_p95": stmt.excluded.duration_p95,
                     },
                 )
                 db.execute(stmt)

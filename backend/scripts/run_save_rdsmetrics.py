@@ -34,19 +34,20 @@ logging.basicConfig(
 logger = logging.getLogger("run_save_rdsmetrics")
 
 
-def run(region: str = "us-east-1"):
+def run(region: str = "us-east-1", profile_id: int = None):
     """Main entry point: iterate profiles → smart sync RDS metrics."""
     db = SessionLocal()
     try:
-        # 1. Find all profiles with AWS role configured
-        profiles = (
-            db.query(UserProfile)
-            .filter(
-                UserProfile.aws_role_arn.isnot(None),
-                UserProfile.aws_external_id.isnot(None),
-            )
-            .all()
+        # 1. Find profiles with AWS role configured
+        query = db.query(UserProfile).filter(
+            UserProfile.aws_role_arn.isnot(None),
+            UserProfile.aws_external_id.isnot(None),
         )
+
+        if profile_id:
+            query = query.filter(UserProfile.profile_id == profile_id)
+
+        profiles = query.all()
         logger.info(f"Found {len(profiles)} profiles with AWS role configured")
 
         if not profiles:
@@ -84,13 +85,9 @@ def run(region: str = "us-east-1"):
 
             # 4. Smart sync — checks DB, pulls only missing (+ gaps), saves
             try:
-                smart_sync_rds_metrics(
-                    customer_session=session,
-                    account_id=account_id,
-                    region=region,
-                    profile_id=profile.profile_id,
-                )
-                logger.info(f"  ✅ Smart sync completed for profile {profile.profile_id}")
+                from backend.mock.mock_metrics_rds import mock_smart_sync_rds_metrics
+                mock_smart_sync_rds_metrics(db=db, account_id=account_id, region=region, profile_id=profile.profile_id)
+                logger.info(f"  ✅ Mock Smart sync completed for profile {profile.profile_id}")
             except Exception as e:
                 logger.error(f"  Failed smart sync for profile {profile.profile_id}: {e}")
                 continue
@@ -104,7 +101,8 @@ def run(region: str = "us-east-1"):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Smart sync RDS CloudWatch metrics")
     parser.add_argument("--region", type=str, default="us-east-1", help="AWS region (default: us-east-1)")
+    parser.add_argument("--profile-id", type=int, help="Specific profile ID to sync (optional)")
     args = parser.parse_args()
 
-    logger.info(f"Starting RDS smart metric sync: region={args.region}")
-    run(region=args.region)
+    logger.info(f"Starting RDS smart metric sync: region={args.region}, profile_id={args.profile_id}")
+    run(region=args.region, profile_id=args.profile_id)

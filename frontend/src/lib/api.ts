@@ -58,6 +58,7 @@ export const api = {
   monitoring: {
     getResources: (service: string) => request.get(`/api/monitoring/${service.toLowerCase()}`),
     getMetrics: (service: string, resourceId: number) => request.get(`/api/monitoring/${service.toLowerCase()}/${resourceId}/metrics`),
+    getEIPs: () => request.get(`/api/monitoring/ec2/eips`),
   },
   sync: {
     costs: () => request.post("/sync/cost"),
