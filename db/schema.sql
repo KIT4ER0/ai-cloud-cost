@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS ec2_resources (
   environment     TEXT,
   usage_pattern   TEXT,
   has_public_ip   BOOLEAN,
+  public_ip       VARCHAR(20),
   UNIQUE (account_id, region, instance_id)
 );
 

@@ -130,7 +130,6 @@ function EC2Table({ resources, eips, selectedId, onRowClick }: { resources: any[
                     </TableHeader>
                     <TableBody>
                         {resources.map((r) => {
-                            const associatedEip = eips.find(e => e.ec2_resource_id === r.ec2_resource_id);
                             return (
                                 <TableRow key={r.ec2_resource_id} className="cursor-pointer hover:bg-muted/50" onClick={() => onRowClick(r.ec2_resource_id)}>
                                     <TableCell><Checkbox checked={selectedId === r.ec2_resource_id} onCheckedChange={() => onRowClick(r.ec2_resource_id)} /></TableCell>
@@ -139,7 +138,7 @@ function EC2Table({ resources, eips, selectedId, onRowClick }: { resources: any[
                                     <TableCell>
                                         <Badge variant="outline" className={r.state === "running" ? "border-green-500 text-green-600" : "border-slate-400 text-slate-500"}>{r.state || "unknown"}</Badge>
                                     </TableCell>
-                                    <TableCell>{associatedEip ? associatedEip.public_ip : (r.has_public_ip ? "Yes" : "No")}</TableCell>
+                                    <TableCell className="font-mono text-xs">{r.public_ip || "-"}</TableCell>
                                     <TableCell><Badge variant="outline" className="border-primary text-primary">{r.region}</Badge></TableCell>
                                 </TableRow>
                             );
@@ -175,7 +174,7 @@ function EC2Table({ resources, eips, selectedId, onRowClick }: { resources: any[
                                     <TableCell className="font-mono text-xs text-muted-foreground">{eip.allocation_id}</TableCell>
                                     <TableCell>
                                         <Badge variant={eip.is_idle ? "destructive" : "outline"} className={!eip.is_idle ? "border-green-500 text-green-600" : ""}>
-                                            {eip.is_idle ? "Idle (Charging)" : "In Use"}
+                                            {eip.is_idle ? "Idle" : "In Use"}
                                         </Badge>
                                     </TableCell>
                                     <TableCell className="font-medium text-destructive">

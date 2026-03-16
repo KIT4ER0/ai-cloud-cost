@@ -83,6 +83,7 @@ class EC2ResourceOut(BaseModel):
     environment: Optional[str] = None
     usage_pattern: Optional[str] = None
     has_public_ip: Optional[bool] = None
+    public_ip: Optional[str] = None
     class Config:
         from_attributes = True
 

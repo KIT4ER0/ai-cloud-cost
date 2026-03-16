@@ -92,8 +92,8 @@ MOCK_INSTANCES = [
         # Network
         "egress_gb_per_day": 2.0,
         "cross_az_gb_per_day": 5.0,
-        # IP
-        "has_public_ip": False,
+        # IP - เปลี่ยนเป็น True ตามกฎ AWS ใหม่ที่เก็บเงินทึก IPv4
+        "has_public_ip": True,
         "eip": None,
     },
 ]
@@ -168,8 +168,9 @@ def _build_cost_rows(resource_id: int, inst: dict, days: int = 90) -> list[dict]
                 cross_gb = inst["cross_az_gb_per_day"] * random.uniform(0.5, 1.5)
                 add_row("network_cross_az", cross_gb * NETWORK_CROSS_AZ_PRICE_PER_GB)
 
-        # Public IPv4
+        # Public IPv4 (Charging for all public IPv4s since Feb 1, 2024)
         if inst["has_public_ip"]:
+            # Even if it's not and Elastic IP, AWS charges $0.005/hr for public IPv4
             add_row("public_ipv4", PUBLIC_IPV4_PRICE_PER_HR * 24)
 
         # Calculate TOTAL for this day
@@ -258,12 +259,15 @@ def mock_smart_sync_ec2_metrics(
                 environment=inst["environment"],
                 usage_pattern=inst["usage_pattern"],
                 has_public_ip=inst["has_public_ip"],
+                public_ip=inst["eip"]["public_ip"] if inst.get("eip") else f"13.{random.randint(100,250)}.{random.randint(10,99)}.{random.randint(1,254)}",
             )
             db.add(resource)
             db.flush()
         else:
             resource.state = "running"
             resource.has_public_ip = inst["has_public_ip"]
+            if not resource.public_ip:
+                resource.public_ip = inst["eip"]["public_ip"] if inst.get("eip") else f"13.{random.randint(100,250)}.{random.randint(10,99)}.{random.randint(1,254)}"
             db.flush()
 
         # ── 2. Upsert EBS Volume ─────────────────────────────────────────────

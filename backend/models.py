@@ -53,6 +53,7 @@ class EC2Resource(Base):
     environment = Column(Text)
     usage_pattern = Column(Text)
     has_public_ip = Column(Boolean)
+    public_ip = Column(Text)
 
     profile = relationship("UserProfile", back_populates="ec2_resources")
     metrics = relationship("EC2Metric", back_populates="resource", cascade="all, delete-orphan")
