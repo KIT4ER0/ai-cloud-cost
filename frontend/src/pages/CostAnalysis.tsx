@@ -48,6 +48,15 @@ interface ServiceCostDistribution {
     color: string
 }
 
+interface ResourceCostItem {
+    resource_id: string
+    resource_name: string
+    cost: number
+    prevCost: number
+    change: number
+    changePercent: number
+}
+
 interface CostDriverItem {
     driver: string
     usage: string
@@ -70,6 +79,7 @@ interface CostAnalysisData {
     trend: CostTrendItem[]
     distribution: ServiceCostDistribution[]
     drivers: Record<string, CostDriverItem[]>
+    resources: Record<string, ResourceCostItem[]>
 }
 
 // Time range presets
@@ -135,6 +145,7 @@ function KPICard({
 export default function CostAnalysis() {
     const [timeRange, setTimeRange] = useState<TimeRange>("this_month")
     const [viewMode, setViewMode] = useState<ViewMode>("cost")
+    const [displayTab, setDisplayTab] = useState<"drivers" | "resources">("drivers")
     const [data, setData] = useState<CostAnalysisData | null>(null)
     const [loading, setLoading] = useState(true)
 
@@ -329,8 +340,9 @@ export default function CostAnalysis() {
                                                     innerRadius={50}
                                                     outerRadius={90}
                                                     paddingAngle={2}
+                                                    minAngle={5}
                                                     dataKey="value"
-                                                    label={({ name, percent }) => `${name} ${((percent ?? 0) * 100).toFixed(0)}%`}
+                                                    label={({ percent }) => `${((percent ?? 0) * 100).toFixed(0)}%`}
                                                     labelLine={true}
                                                 >
                                                     {distribution.map((entry, index) => (
@@ -399,7 +411,6 @@ export default function CostAnalysis() {
                                             {first && (
                                                 <div className="flex flex-col items-center">
                                                     <div className="text-center mb-2">
-                                                        <span className="text-2xl">🌟</span>
                                                         <p className="font-bold text-xl">{first.name}</p>
                                                         <p className="text-primary font-semibold">${first.value.toLocaleString(undefined, { maximumFractionDigits: 0 })}</p>
                                                     </div>
@@ -440,31 +451,57 @@ export default function CostAnalysis() {
                         </Card>
                     </div>
 
-                    {/* Section 3: Enhanced Cost Drivers */}
+                    {/* Section 3: Enhanced Cost Drivers / Resources */}
                     <Card>
-                        <CardHeader className="flex flex-row items-center justify-between">
-                            <div>
-                                <CardTitle>Cost Drivers</CardTitle>
+                        <CardHeader className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                            <div className="space-y-1">
+                                <CardTitle>{displayTab === "drivers" ? "Cost Drivers" : "Resources Cost"}</CardTitle>
                                 <p className="text-sm text-muted-foreground">
-                                    Breakdown by service • Sorted by highest change
+                                    {displayTab === "drivers" 
+                                        ? "Breakdown by usage type • Sorted by highest change" 
+                                        : "Breakdown by individual resource • Sorted by cost"}
                                 </p>
                             </div>
-                            <div className="flex gap-1 bg-muted p-1 rounded-lg">
-                                {(["cost", "change"] as ViewMode[]).map((mode) => (
+                            <div className="flex flex-wrap items-center gap-3">
+                                {/* Tab Switcher */}
+                                <div className="flex gap-1 bg-muted p-1 rounded-lg">
                                     <Button
-                                        key={mode}
-                                        variant={viewMode === mode ? "default" : "ghost"}
+                                        variant={displayTab === "drivers" ? "default" : "ghost"}
                                         size="sm"
-                                        onClick={() => setViewMode(mode)}
-                                        className="capitalize"
+                                        onClick={() => setDisplayTab("drivers")}
                                     >
-                                        {mode}
+                                        Drivers
                                     </Button>
-                                ))}
+                                    <Button
+                                        variant={displayTab === "resources" ? "default" : "ghost"}
+                                        size="sm"
+                                        onClick={() => setDisplayTab("resources")}
+                                    >
+                                        Resources
+                                    </Button>
+                                </div>
+                                
+                                <div className="h-8 w-[1px] bg-border hidden sm:block" />
+
+                                <div className="flex gap-1 bg-muted p-1 rounded-lg">
+                                    {(["cost", "change"] as ViewMode[]).map((mode) => (
+                                        <Button
+                                            key={mode}
+                                            variant={viewMode === mode ? "default" : "ghost"}
+                                            size="sm"
+                                            onClick={() => setViewMode(mode)}
+                                            className="capitalize"
+                                        >
+                                            {mode}
+                                        </Button>
+                                    ))}
+                                </div>
                             </div>
                         </CardHeader>
-                        <CardContent className="space-y-6">
-                            {Object.entries(drivers).length > 0 ? Object.entries(drivers).map(([service, serviceDrivers]) => (
+                        <CardContent className="space-y-8">
+                            {displayTab === "drivers" ? (
+                                // Original Drivers View
+                                Object.entries(drivers).length > 0 ? Object.entries(drivers).map(([service, serviceDrivers]) => (
                                 <div key={service} className="space-y-2">
                                     <div className="flex items-center gap-2">
                                         <div
@@ -510,8 +547,62 @@ export default function CostAnalysis() {
                                         </TableBody>
                                     </Table>
                                 </div>
-                            )) : (
-                                <div className="text-center py-8 text-muted-foreground">No cost drivers found for this period</div>
+                                )) : (
+                                    <div className="text-center py-12 text-muted-foreground">No cost drivers found for this period</div>
+                                )
+                            ) : (
+                                // New Resources View
+                                Object.entries(data.resources).length > 0 ? Object.entries(data.resources).map(([service, resources]) => (
+                                    <div key={service} className="space-y-3">
+                                        <div className="flex items-center gap-2">
+                                            <div
+                                                className="w-3 h-3 rounded-full"
+                                                style={{
+                                                    backgroundColor: distribution.find(s => s.name === service)?.color || "#6b7280"
+                                                }}
+                                            />
+                                            <h4 className="font-semibold text-lg">{service} Resources</h4>
+                                        </div>
+                                        <Table>
+                                            <TableHeader>
+                                                <TableRow>
+                                                    <TableHead className="w-[45%]">Resource ID</TableHead>
+                                                    <TableHead className={`text-right ${viewMode === "cost" ? "bg-primary/5" : ""}`}>Cost</TableHead>
+                                                    <TableHead className={`text-right ${viewMode === "change" ? "bg-primary/5" : ""}`}>Change vs Prev</TableHead>
+                                                </TableRow>
+                                            </TableHeader>
+                                            <TableBody>
+                                                {resources.map((res, index) => (
+                                                    <TableRow key={index} className="hover:bg-muted/50 transition-colors">
+                                                        <TableCell className="font-medium font-mono text-xs max-w-[200px] truncate" title={res.resource_id}>
+                                                            {res.resource_id}
+                                                        </TableCell>
+                                                        <TableCell className={`text-right ${viewMode === "cost" ? "bg-primary/5 font-medium" : ""}`}>
+                                                            ${res.cost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                                        </TableCell>
+                                                        <TableCell className={`text-right ${viewMode === "change" ? "bg-primary/5" : ""}`}>
+                                                            <div className={`flex items-center justify-end gap-1 ${res.change > 0 ? "text-red-500" : res.change < 0 ? "text-green-500" : "text-muted-foreground"
+                                                                }`}>
+                                                                {res.change > 0 && <TrendingUp className="h-3 w-3" />}
+                                                                {res.change < 0 && <TrendingDown className="h-3 w-3" />}
+                                                                <span className="font-medium text-xs">
+                                                                    {res.change > 0 ? "+" : ""}{res.change !== 0 ? `$${Math.abs(res.change).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "-"}
+                                                                </span>
+                                                                {res.change !== 0 && (
+                                                                    <span className="text-[10px] opacity-70">
+                                                                        ({res.changePercent > 0 ? "+" : ""}{res.changePercent.toFixed(1)}%)
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                        </TableCell>
+                                                    </TableRow>
+                                                ))}
+                                            </TableBody>
+                                        </Table>
+                                    </div>
+                                )) : (
+                                    <div className="text-center py-12 text-muted-foreground">No resource-level cost data found</div>
+                                )
                             )}
                         </CardContent>
                     </Card>

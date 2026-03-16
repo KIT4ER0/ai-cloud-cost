@@ -229,7 +229,7 @@ def get_cost_analysis(
         
         query = query.filter(cost_model.usage_type != 'total')
             
-        rows = query.group_by(cost_model.usage_type).order_by(desc("cost")).limit(5).all()
+        rows = query.group_by(cost_model.usage_type).order_by(desc("cost")).all()
 
         service_drivers = []
         for r in rows:
@@ -261,9 +261,80 @@ def get_cost_analysis(
             ))
         drivers_data[service_name] = service_drivers
 
+    # 7. Resource Costs (Breakdown by individual resource)
+    resource_costs_data = {}
+    
+    # Mapping for resource identifier columns
+    resource_id_cols = {
+        "EC2": models.EC2Resource.instance_id,
+        "Lambda": models.LambdaResource.function_name,
+        "RDS": models.RDSResource.db_identifier,
+        "S3": models.S3Resource.bucket_name,
+        "ALB": models.ALBResource.alb_name,
+        "EIP": models.EC2ElasticIP.public_ip,
+    }
+
+    for service_name, (cost_model, resource_model, fk_col) in services_map.items():
+        id_col = resource_id_cols.get(service_name)
+        if id_col is None:
+            continue
+            
+        pk_name = resource_model.__tablename__[:-1] + "_id"
+        if resource_model.__tablename__ == "ec2_elastic_ips":
+             pk_name = "eip_id"
+        pk_col = getattr(resource_model, pk_name)
+
+        # Current period resource costs
+        query = db.query(
+            id_col.label("res_id"),
+            func.sum(cost_model.amount_usd).label("cost")
+        ).join(
+            resource_model, fk_col == pk_col
+        ).filter(
+            resource_model.profile_id == current_user.profile_id,
+            cost_model.usage_date >= start_date,
+            cost_model.usage_date <= end_date,
+            cost_model.usage_type == 'total'
+        ).group_by(id_col).all()
+
+        service_resource_costs = []
+        for r in query:
+            # Previous period cost for this specific resource
+            query_prev = db.query(func.sum(cost_model.amount_usd)).join(
+                resource_model, fk_col == pk_col
+            ).filter(
+                resource_model.profile_id == current_user.profile_id,
+                cost_model.usage_date >= prev_start,
+                cost_model.usage_date <= prev_end,
+                cost_model.usage_type == 'total',
+                id_col == r.res_id
+            )
+            prev_val = query_prev.scalar() or 0.0
+            
+            cost = float(r.cost or 0)
+            prev_cost = float(prev_val)
+            change = cost - prev_cost
+            pct = 0.0
+            if prev_cost > 0:
+                pct = (change / prev_cost) * 100
+            
+            service_resource_costs.append(schemas.ResourceCostItem(
+                resource_id=r.res_id,
+                resource_name=r.res_id,
+                cost=cost,
+                prevCost=prev_cost,
+                change=change,
+                changePercent=pct
+            ))
+            
+        # Sort by cost descending
+        service_resource_costs.sort(key=lambda x: x.cost, reverse=True)
+        resource_costs_data[service_name] = service_resource_costs
+
     return schemas.CostAnalysisData(
         summary=summary,
         trend=trend_data,
         distribution=distribution,
-        drivers=drivers_data
+        drivers=drivers_data,
+        resources=resource_costs_data
     )

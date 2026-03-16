@@ -432,7 +432,7 @@ export default function Monitoring() {
             return (
                 <div className="flex items-center justify-center py-12">
                     <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-                    <span className="ml-2 text-muted-foreground">กำลังโหลดรายการทรัพยากร...</span>
+                    <span className="ml-2 text-muted-foreground">Loading resource list...</span>
                 </div>
             )
         }
@@ -440,7 +440,7 @@ export default function Monitoring() {
         if (resources.length === 0 && (selectedService !== "EC2" || eips.length === 0)) {
             return (
                 <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
-                    <p>ไม่พบรายการทรัพยากรสำหรับบริการนี้</p>
+                    <p>No resources found for this service</p>
                 </div>
             )
         }
@@ -497,7 +497,7 @@ export default function Monitoring() {
                                     onValueChange={(value) => setSelectedMonthNum(value)}
                                 >
                                     <SelectTrigger className="h-8 w-[100px] text-xs">
-                                        <SelectValue placeholder="เดือน" />
+                                        <SelectValue placeholder="Month" />
                                     </SelectTrigger>
                                     <SelectContent>
                                         {allMonths.map((m) => (
@@ -512,7 +512,7 @@ export default function Monitoring() {
                                     onValueChange={(value) => setSelectedYear(value)}
                                 >
                                     <SelectTrigger className="h-8 w-[80px] text-xs">
-                                        <SelectValue placeholder="ปี" />
+                                        <SelectValue placeholder="Year" />
                                     </SelectTrigger>
                                     <SelectContent>
                                         {availableYears.map((y) => (

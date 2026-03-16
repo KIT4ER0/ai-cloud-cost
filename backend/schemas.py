@@ -57,11 +57,20 @@ class CostDriverItem(BaseModel):
     change: float
     changePercent: float
 
+class ResourceCostItem(BaseModel):
+    resource_id: str
+    resource_name: Optional[str] = None
+    cost: float
+    prevCost: float
+    change: float
+    changePercent: float
+
 class CostAnalysisData(BaseModel):
     summary: KPIItem
     trend: List[CostTrendItem]
     distribution: List[ServiceCostDistribution]
     drivers: Dict[str, List[CostDriverItem]]
+    resources: Dict[str, List[ResourceCostItem]]
 
 # =======================
 # Resources & Metrics
