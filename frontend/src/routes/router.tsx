@@ -8,11 +8,16 @@ import Recommend from "@/pages/Recommend"
 import Onboarding from "@/pages/Onboarding"
 import SignIn from "@/pages/SignIn"
 import Profile from "@/pages/Profile"
+import { AuthGuard } from "@/components/auth/AuthGuard"
 
 export const router = createBrowserRouter([
     {
         path: "/",
-        element: <MainLayout />,
+        element: (
+            <AuthGuard>
+                <MainLayout />
+            </AuthGuard>
+        ),
         children: [
             {
                 path: "/",
@@ -46,10 +51,18 @@ export const router = createBrowserRouter([
     },
     {
         path: "/onboarding",
-        element: <Onboarding />,
+        element: (
+            <AuthGuard requireAuth={false}>
+                <Onboarding />
+            </AuthGuard>
+        ),
     },
     {
         path: "/signin",
-        element: <SignIn />,
+        element: (
+            <AuthGuard requireAuth={false}>
+                <SignIn />
+            </AuthGuard>
+        ),
     },
 ]);

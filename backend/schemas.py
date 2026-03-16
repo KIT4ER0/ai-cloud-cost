@@ -24,6 +24,10 @@ class CostSummary(BaseModel):
     active_services_count: int
     top_anomalies: List[Dict[str, Any]]
 
+class ResourceSummary(BaseModel):
+    total_resources: int
+    new_resources_this_month: int
+
 class ServiceCost(BaseModel):
     service_name: str
     total_cost: float

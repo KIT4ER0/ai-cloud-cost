@@ -1,6 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 from typing import List
+from datetime import datetime, date, time
 
 from .. import database, models, auth, schemas
 
@@ -9,6 +11,50 @@ router = APIRouter(
     tags=["Monitoring"],
     dependencies=[Depends(auth.get_current_user)]
 )
+
+@router.get("/summary", response_model=schemas.ResourceSummary)
+def get_resource_summary(
+    current_user: models.UserProfile = Depends(auth.get_current_user),
+    db: Session = Depends(database.get_db),
+):
+    profile_id = current_user.profile_id
+    
+    # Total counts
+    ec2_count = db.query(models.EC2Resource).filter_by(profile_id=profile_id).count()
+    lambda_count = db.query(models.LambdaResource).filter_by(profile_id=profile_id).count()
+    rds_count = db.query(models.RDSResource).filter_by(profile_id=profile_id).count()
+    s3_count = db.query(models.S3Resource).filter_by(profile_id=profile_id).count()
+    alb_count = db.query(models.ALBResource).filter_by(profile_id=profile_id).count()
+    
+    total_resources = ec2_count + lambda_count + rds_count + s3_count + alb_count
+    
+    # New resources this month
+    start_of_month = datetime.combine(date.today().replace(day=1), time.min)
+    
+    # EC2 use launch_time
+    new_ec2 = db.query(models.EC2Resource).filter(
+        models.EC2Resource.profile_id == profile_id,
+        models.EC2Resource.launch_time >= start_of_month
+    ).count()
+    
+    # S3 use created_at
+    new_s3 = db.query(models.S3Resource).filter(
+        models.S3Resource.profile_id == profile_id,
+        models.S3Resource.created_at >= start_of_month
+    ).count()
+    
+    # ALB use created_at
+    new_alb = db.query(models.ALBResource).filter(
+        models.ALBResource.profile_id == profile_id,
+        models.ALBResource.created_at >= start_of_month
+    ).count()
+    
+    new_resources = new_ec2 + new_s3 + new_alb
+    
+    return schemas.ResourceSummary(
+        total_resources=total_resources,
+        new_resources_this_month=new_resources
+    )
 
 # ---- EC2 ----
 

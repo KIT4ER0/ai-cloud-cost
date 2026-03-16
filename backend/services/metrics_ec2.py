@@ -264,7 +264,7 @@ def smart_sync_ec2_metrics(
         for inst in live_instances:
             iid = inst["instance_id"]
             resource = db.query(models.EC2Resource).filter_by(
-                account_id=account_id, region=region, instance_id=iid
+                profile_id=profile_id, account_id=account_id, region=region, instance_id=iid
             ).first()
             if not resource:
                 resource = models.EC2Resource(

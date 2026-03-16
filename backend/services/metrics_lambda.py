@@ -141,7 +141,7 @@ def save_lambda_metrics(pull_results: dict, account_id: str, region: str, profil
 
             # 1) Upsert Lambda resource
             resource = db.query(models.LambdaResource).filter_by(
-                account_id=account_id, region=region, function_name=fname
+                profile_id=profile_id, account_id=account_id, region=region, function_name=fname
             ).first()
 
             if not resource:

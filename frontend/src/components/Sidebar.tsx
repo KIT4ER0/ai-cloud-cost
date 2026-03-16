@@ -1,4 +1,4 @@
-import { Link, useLocation } from "react-router-dom"
+import { Link, useLocation, useNavigate } from "react-router-dom"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import {
@@ -10,6 +10,7 @@ import {
     LogOut,
     User
 } from "lucide-react"
+import { useAuthStore } from "@/store/useAuthStore"
 
 interface SidebarProps {
     className?: string
@@ -17,6 +18,8 @@ interface SidebarProps {
 
 export function Sidebar({ className }: SidebarProps) {
     const location = useLocation()
+    const navigate = useNavigate()
+    const logout = useAuthStore((state) => state.logout)
 
     const links = [
         { name: "Dashboard", href: "/home", icon: LayoutDashboard },
@@ -26,6 +29,17 @@ export function Sidebar({ className }: SidebarProps) {
         { name: "Recommendations", href: "/recommend", icon: Lightbulb },
         { name: "User Profile", href: "/profile", icon: User },
     ]
+
+    const handleSignOut = async () => {
+        try {
+            await logout();
+            navigate('/signin');
+        } catch (error) {
+            console.error("Sign out failed:", error);
+            // Fallback redirect even if logout fails
+            window.location.href = '/signin';
+        }
+    };
 
     return (
         <div className={cn("pb-12 w-64 border-r bg-background min-h-screen", className)}>
@@ -57,14 +71,7 @@ export function Sidebar({ className }: SidebarProps) {
                     <Button
                         variant="ghost"
                         className="w-full justify-start text-red-500 hover:text-red-600 hover:bg-red-50"
-                        onClick={() => {
-                            // Import useAuthStore dynamically or at top level if hook rules allow
-                            // effectively we need to trigger logout and navigation.
-                            // Since this is a component inside Router, we can use useNavigate.
-                            // However, Sidebar might be used in MainLayout.
-                            // Let's assume we can navigate.
-                            window.location.href = '/signin';
-                        }}
+                        onClick={handleSignOut}
                     >
                         <LogOut className="mr-2 h-4 w-4" />
                         Sign Out

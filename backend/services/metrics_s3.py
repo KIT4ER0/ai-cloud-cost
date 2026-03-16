@@ -164,7 +164,7 @@ def save_s3_metrics(pull_results: dict, account_id: str, region: str, profile_id
 
             # 1) Upsert S3 resource
             resource = db.query(models.S3Resource).filter_by(
-                account_id=account_id, region=region, bucket_name=bname
+                profile_id=profile_id, account_id=account_id, region=region, bucket_name=bname
             ).first()
 
             if not resource:

@@ -57,6 +57,7 @@ export const api = {
   },
   monitoring: {
     getResources: (service: string) => request.get(`/api/monitoring/${service.toLowerCase()}`),
+    getSummary: () => request.get("/api/monitoring/summary"),
     getMetrics: (service: string, resourceId: number) => request.get(`/api/monitoring/${service.toLowerCase()}/${resourceId}/metrics`),
     getEIPs: () => request.get(`/api/monitoring/ec2/eips`),
   },

@@ -140,7 +140,7 @@ def save_rds_metrics(pull_results: dict, account_id: str, region: str, profile_i
 
             # 1) Upsert RDS resource
             resource = db.query(models.RDSResource).filter_by(
-                account_id=account_id, region=region, db_identifier=db_id
+                profile_id=profile_id, account_id=account_id, region=region, db_identifier=db_id
             ).first()
 
             if not resource:

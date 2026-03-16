@@ -58,16 +58,29 @@ def get_cost_analysis(
 
     # Helper to query cost tables, filtered by profile_id through resource JOIN
     def query_service_costs(cost_model, resource_model, fk_col, start, end):
-        return db.query(
+        # Determine the primary key of the resource model
+        # Normally table_name[:-1] + "_id", but for EC2ElasticIP it's eip_id
+        pk_name = resource_model.__tablename__[:-1] + "_id"
+        if resource_model.__tablename__ == "ec2_elastic_ips":
+            pk_name = "eip_id"
+            
+        pk_col = getattr(resource_model, pk_name)
+        
+        query = db.query(
             cost_model.usage_date,
             func.sum(cost_model.amount_usd).label("cost")
         ).join(
-            resource_model, fk_col == getattr(resource_model, resource_model.__tablename__[:-1] + "_id")
+            resource_model, fk_col == pk_col
         ).filter(
             resource_model.profile_id == current_user.profile_id,
             cost_model.usage_date >= start,
             cost_model.usage_date <= end
-        ).group_by(cost_model.usage_date).all()
+        )
+        
+        # Filter by usage_type='total' strictly as requested
+        query = query.filter(cost_model.usage_type == 'total')
+                
+        return query.group_by(cost_model.usage_date).all()
 
     # Query all services (cost_model, resource_model, fk_column)
     services_map = {
@@ -75,6 +88,8 @@ def get_cost_analysis(
         "Lambda": (models.LambdaCost, models.LambdaResource, models.LambdaCost.lambda_resource_id),
         "RDS": (models.RDSCost, models.RDSResource, models.RDSCost.rds_resource_id),
         "S3": (models.S3Cost, models.S3Resource, models.S3Cost.s3_resource_id),
+        "ALB": (models.ALBCost, models.ALBResource, models.ALBCost.alb_resource_id),
+        "EIP": (models.EC2EIPCost, models.EC2ElasticIP, models.EC2EIPCost.eip_id),
     }
 
     # Data structures for aggregation
@@ -96,13 +111,22 @@ def get_cost_analysis(
     # 2. Previous Period Data (for KPI comparison)
     prev_total_cost = 0.0
     for service_name, (cost_model, resource_model, fk_col) in services_map.items():
-        val = db.query(func.sum(cost_model.amount_usd)).join(
-            resource_model, fk_col == getattr(resource_model, resource_model.__tablename__[:-1] + "_id")
+        pk_name = resource_model.__tablename__[:-1] + "_id"
+        if resource_model.__tablename__ == "ec2_elastic_ips":
+            pk_name = "eip_id"
+        pk_col = getattr(resource_model, pk_name)
+
+        query = db.query(func.sum(cost_model.amount_usd)).join(
+            resource_model, fk_col == pk_col
         ).filter(
             resource_model.profile_id == current_user.profile_id,
             cost_model.usage_date >= prev_start,
             cost_model.usage_date <= prev_end
-        ).scalar() or 0.0
+        )
+        
+        query = query.filter(cost_model.usage_type == 'total')
+                
+        val = query.scalar() or 0.0
         prev_total_cost += float(val)
 
     # 3. KPI Calculations
@@ -130,16 +154,36 @@ def get_cost_analysis(
     )
 
     # 4. Trends (Chart Data)
-    # Fill missing dates with 0
     trend_data = []
-    curr = start_date
-    while curr <= end_date:
-        d_str = str(curr)
-        trend_data.append(schemas.CostTrendItem(
-            date=d_str,
-            cost=daily_costs.get(d_str, 0.0)
-        ))
-        curr += timedelta(days=1)
+    
+    # If time_range is multi-month, aggregate by month
+    if time_range in ["last_4_months", "last_6_months", "this_year"]:
+        monthly_map: Dict[str, float] = {}
+        curr = start_date
+        while curr <= end_date:
+            month_key = curr.strftime("%Y-%m-01")
+            d_str = str(curr)
+            val = daily_costs.get(d_str, 0.0)
+            monthly_map[month_key] = monthly_map.get(month_key, 0.0) + val
+            curr += timedelta(days=1)
+            
+        # Convert map to sorted list of TrendItems
+        sorted_months = sorted(monthly_map.keys())
+        for m in sorted_months:
+            trend_data.append(schemas.CostTrendItem(
+                date=m,
+                cost=monthly_map[m]
+            ))
+    else:
+        # Daily trend (original logic)
+        curr = start_date
+        while curr <= end_date:
+            d_str = str(curr)
+            trend_data.append(schemas.CostTrendItem(
+                date=d_str,
+                cost=daily_costs.get(d_str, 0.0)
+            ))
+            curr += timedelta(days=1)
     
     # 5. Distribution (Pie Chart)
     # Define colors
@@ -162,29 +206,43 @@ def get_cost_analysis(
     # 6. Cost Drivers (Breakdown by usage_type)
     drivers_data = {}
     for service_name, (cost_model, resource_model, fk_col) in services_map.items():
-        # Get top usage types by cost
-        rows = db.query(
+        # Only show drivers for tables that HAVE usage_type and are NOT the 'total' row itself
+        if not hasattr(cost_model, 'usage_type'):
+            continue
+            
+        pk_name = resource_model.__tablename__[:-1] + "_id"
+        if resource_model.__tablename__ == "ec2_elastic_ips":
+             pk_name = "eip_id"
+        pk_col = getattr(resource_model, pk_name)
+        
+        # Get top usage types by cost (excluding the 'total' type itself to see the breakdown)
+        query = db.query(
             cost_model.usage_type,
             func.sum(cost_model.amount_usd).label("cost")
         ).join(
-            resource_model, fk_col == getattr(resource_model, resource_model.__tablename__[:-1] + "_id")
+            resource_model, fk_col == pk_col
         ).filter(
             resource_model.profile_id == current_user.profile_id,
             cost_model.usage_date >= start_date,
             cost_model.usage_date <= end_date
-        ).group_by(cost_model.usage_type).order_by(desc("cost")).limit(5).all()
+        )
+        
+        query = query.filter(cost_model.usage_type != 'total')
+            
+        rows = query.group_by(cost_model.usage_type).order_by(desc("cost")).limit(5).all()
 
         service_drivers = []
         for r in rows:
             # Get previous cost for this specific usage type
-            prev_val = db.query(func.sum(cost_model.amount_usd)).join(
-                resource_model, fk_col == getattr(resource_model, resource_model.__tablename__[:-1] + "_id")
+            query_prev = db.query(func.sum(cost_model.amount_usd)).join(
+                resource_model, fk_col == pk_col
             ).filter(
                 resource_model.profile_id == current_user.profile_id,
                 cost_model.usage_date >= prev_start,
                 cost_model.usage_date <= prev_end,
                 cost_model.usage_type == r.usage_type
-            ).scalar() or 0.0
+            )
+            prev_val = query_prev.scalar() or 0.0
             
             cost = float(r.cost or 0)
             prev_cost = float(prev_val)

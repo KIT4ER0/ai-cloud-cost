@@ -155,7 +155,7 @@ export default function CostAnalysis() {
 
     if (loading || !data) {
         return (
-            <div className="flex h-[50vh] items-center justify-center">
+            <div className="flex h-[80vh] items-center justify-center">
                 <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
                 <span className="ml-2 text-muted-foreground">Loading cost analysis...</span>
             </div>

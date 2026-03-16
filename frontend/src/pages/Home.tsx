@@ -2,8 +2,8 @@ import { Link } from 'react-router-dom'
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { BarChart, Bar, ResponsiveContainer, XAxis, YAxis, Tooltip } from "recharts"
-import { DollarSign, Server, TrendingUp, TrendingDown, ArrowRight, RefreshCw } from 'lucide-react'
-import { useState } from 'react'
+import { DollarSign, TrendingUp, TrendingDown, ArrowRight, RefreshCw, Cpu, Loader2 } from 'lucide-react'
+import { useState, useEffect } from 'react'
 import { api } from '@/lib/api'
 import { Button } from "@/components/ui/button"
 import { RECOMMENDATIONS } from '@/types/recommendation'
@@ -11,6 +11,38 @@ import { getDashboardSummary } from '@/lib/dashboard-data'
 
 export default function Home() {
     const [isSyncing, setIsSyncing] = useState(false);
+    const [resourceSummary, setResourceSummary] = useState({ total_resources: 0, new_resources_this_month: 0 });
+    const [costAnalysis, setCostAnalysis] = useState<any>(null);
+    const [monthlyTrend, setMonthlyTrend] = useState<any[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
+
+    useEffect(() => {
+        const fetchData = async () => {
+            setIsLoading(true);
+            try {
+                const [summaryData, costData, trendData] = await Promise.all([
+                    api.monitoring.getSummary(),
+                    api.costs.getAnalysis("this_month"),
+                    api.costs.getAnalysis("last_6_months")
+                ]);
+                setResourceSummary(summaryData);
+                setCostAnalysis(costData);
+                
+                // Process monthly trend data
+                const processedTrend = trendData?.trend?.map((item: any) => ({
+                    period: new Date(item.date).toLocaleDateString('en-US', { month: 'short' }),
+                    cost: item.cost,
+                    fullDate: item.date
+                })) ?? [];
+                setMonthlyTrend(processedTrend);
+            } catch (error) {
+                console.error("Failed to fetch dashboard data:", error);
+            } finally {
+                setIsLoading(false);
+            }
+        };
+        fetchData();
+    }, []);
 
     const handleSync = async () => {
         setIsSyncing(true);
@@ -28,7 +60,17 @@ export default function Home() {
     };
 
     // Get real-time data from shared data module
-    const dashboard = getDashboardSummary()
+    const mockDashboard = getDashboardSummary()
+
+    // Calculate dynamic values from real data if available
+    const totalCost = costAnalysis?.summary?.totalCost ?? 0;
+    const prevTotalCost = costAnalysis?.summary?.prevTotalCost ?? 0;
+    const costChange = prevTotalCost > 0 ? ((totalCost - prevTotalCost) / prevTotalCost) * 100 : 0;
+    const costChangeDirection = costChange >= 0 ? 'up' : 'down';
+    const forecastCost = costAnalysis?.summary?.projectedMonthEnd ?? 0;
+    
+    // Map trend data for chart
+    const costTrend = monthlyTrend.length > 0 ? monthlyTrend : [];
 
     // Take top 3 recommendations for the summary
     const topRecommendations = RECOMMENDATIONS.slice(0, 3)
@@ -43,6 +85,15 @@ export default function Home() {
         }).format(value)
     }
 
+    if (isLoading) {
+        return (
+            <div className="flex h-[80vh] items-center justify-center">
+                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                <span className="ml-2 text-muted-foreground">Loading dashboard...</span>
+            </div>
+        );
+    }
+
     return (
         <div className="min-h-screen bg-gray-50/50 -m-8 p-8">
             <div className="space-y-8">
@@ -52,7 +103,7 @@ export default function Home() {
                         <h2 className="text-3xl font-bold tracking-tight text-primary">Dashboard</h2>
                         <p className="text-muted-foreground">Overview of your cloud spend and health.</p>
                     </div>
-                    <Button onClick={handleSync} disabled={isSyncing} className="bg-blue-600 hover:bg-blue-700">
+                    <Button onClick={handleSync} disabled={isSyncing}>
                         <RefreshCw className={`mr-2 h-4 w-4 ${isSyncing ? 'animate-spin' : ''}`} />
                         {isSyncing ? 'Syncing...' : 'Sync AWS Data'}
                     </Button>
@@ -67,33 +118,33 @@ export default function Home() {
                             <DollarSign className="h-4 w-4 text-muted-foreground" />
                         </CardHeader>
                         <CardContent>
-                            <div className="text-3xl font-bold">{formatCurrency(dashboard.totalCost)}</div>
+                            <div className="text-3xl font-bold">{formatCurrency(totalCost)}</div>
                             <div className="flex items-center gap-1 mt-1">
-                                {dashboard.costChangeDirection === 'up' ? (
+                                {costChangeDirection === 'up' ? (
                                     <TrendingUp className="h-4 w-4 text-red-500" />
                                 ) : (
                                     <TrendingDown className="h-4 w-4 text-green-500" />
                                 )}
-                                <span className={`text-sm font-medium ${dashboard.costChangeDirection === 'up' ? 'text-red-500' : 'text-green-500'}`}>
-                                    {dashboard.costChangeDirection === 'up' ? '+' : '-'}{dashboard.costChange.toFixed(1)}%
+                                <span className={`text-sm font-medium ${costChangeDirection === 'up' ? 'text-red-500' : 'text-green-500'}`}>
+                                    {costChangeDirection === 'up' ? '+' : ''}{costChange.toFixed(1)}%
                                 </span>
                                 <span className="text-xs text-muted-foreground">from last month</span>
                             </div>
                         </CardContent>
                     </Card>
 
-                    {/* Card 2: Active Instances */}
+                    {/* Card 2: Active Resources */}
                     <Card className="bg-white shadow-md hover:shadow-lg transition-shadow">
                         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                            <CardTitle className="text-sm font-medium text-muted-foreground">Active Instances</CardTitle>
-                            <Server className="h-4 w-4 text-muted-foreground" />
+                            <CardTitle className="text-sm font-medium text-muted-foreground">Active Resources</CardTitle>
+                            <Cpu className="h-4 w-4 text-muted-foreground" />
                         </CardHeader>
                         <CardContent>
-                            <div className="text-3xl font-bold">{dashboard.activeInstances}</div>
+                            <div className="text-3xl font-bold">{resourceSummary.total_resources}</div>
                             <div className="flex items-center gap-1 mt-1">
                                 <TrendingUp className="h-4 w-4 text-blue-500" />
-                                <span className="text-sm text-blue-500 font-medium">+{dashboard.instanceChange}</span>
-                                <span className="text-xs text-muted-foreground">new instances</span>
+                                <span className="text-sm text-blue-500 font-medium">+{resourceSummary.new_resources_this_month}</span>
+                                <span className="text-xs text-muted-foreground">new resources this month</span>
                             </div>
                         </CardContent>
                     </Card>
@@ -105,7 +156,7 @@ export default function Home() {
                             <TrendingUp className="h-4 w-4 text-muted-foreground" />
                         </CardHeader>
                         <CardContent>
-                            <div className="text-3xl font-bold">{formatCurrency(dashboard.forecastCost)}</div>
+                            <div className="text-3xl font-bold">{formatCurrency(forecastCost)}</div>
                             <p className="text-xs text-muted-foreground mt-1">Predicted end of month</p>
                         </CardContent>
                     </Card>
@@ -120,7 +171,7 @@ export default function Home() {
                         </CardHeader>
                         <CardContent className="pl-2">
                             <ResponsiveContainer width="100%" height={350}>
-                                <BarChart data={dashboard.costTrend}>
+                                <BarChart data={costTrend}>
                                     <XAxis
                                         dataKey="period"
                                         stroke="#888888"
@@ -160,7 +211,7 @@ export default function Home() {
                                 </Link>
                             </div>
                             <p className="text-sm text-muted-foreground">
-                                Potential savings: <span className="font-semibold text-green-600">${dashboard.totalPotentialSavings}/mo</span>
+                                Potential savings: <span className="font-semibold text-green-600">${mockDashboard.totalPotentialSavings}/mo</span>
                             </p>
                         </CardHeader>
                         <CardContent className="space-y-4">

@@ -145,7 +145,7 @@ def save_alb_metrics(pull_results: dict, account_id: str, region: str, profile_i
 
             # 1) Upsert ALB resource
             resource = db.query(models.ALBResource).filter_by(
-                account_id=account_id, region=region, lb_name=lb_name
+                profile_id=profile_id, account_id=account_id, region=region, lb_name=lb_name
             ).first()
 
             if not resource:

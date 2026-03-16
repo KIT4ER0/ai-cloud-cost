@@ -1,141 +1,144 @@
+import boto3
+import pandas as pd
+import os
+import tempfile
 import logging
-import time
-from datetime import datetime, date
+from typing import List, Dict
 
 logger = logging.getLogger(__name__)
 
 # =====================================================================
-# CONFIGURATION VARIABLES - TO BE REPLACED AFTER CLOUDFORMATION SETUP
+# CONFIGURATION VARIABLES
 # =====================================================================
-# The database and table names are defined when you run the AWS-provided CloudFormation template for the CUR report.
-ATHENA_DATABASE_NAME = "athenacurcfn_ai_cloud_cost_report"
-ATHENA_TABLE_NAME = "ai_cloud_cost_report"
-# The S3 bucket where Athena should store query result files. Must exist in your account.
-ATHENA_OUTPUT_LOCATION = "s3://YOUR-ATHENA-RESULTS-BUCKET-NAME/results/"
+# Replace this with the S3 bucket where you chose to deliver the raw Parquet CUR files
+RAW_CUR_BUCKET = "cur-demo-cloudcost"
+RAW_CUR_PREFIX = "raw-reports/"
 # =====================================================================
 
-def query_athena_cur_data(client, start_date_str: str, end_date_str: str):
+def download_latest_cur_files(client, bucket: str, prefix: str, download_dir: str) -> List[str]:
     """
-    Submits an Athena query to retrieve AWS CUR data grouped by resource ID and usage type.
+    Finds the latest .parquet files in the given S3 bucket prefix and downloads them.
+    """
+    logger.info(f"Scanning S3 bucket {bucket} with prefix {prefix} for Parquet files...")
+    paginator = client.get_paginator('list_objects_v2')
     
-    Args:
-        client: A boto3 Athena client (passed from the assumed session).
-        start_date_str: e.g. "2023-10-01"
-        end_date_str: e.g. "2023-10-31"
-        
-    Returns:
-        List of dictionaries containing parsed cost rows.
-    """
-    logger.info(f"Submitting Athena Query for CUR data between {start_date_str} and {end_date_str}")
+    parquet_files = []
     
-    # We query specific services to map them directly to our PostgesSQL models
-    query = f"""
-        SELECT 
-            line_item_usage_start_date AS usage_date,
-            line_item_product_code AS service_name,
-            line_item_usage_type AS usage_type,
-            line_item_resource_id AS resource_id,
-            SUM(line_item_unblended_cost) AS total_cost
-        FROM {ATHENA_DATABASE_NAME}.{ATHENA_TABLE_NAME}
-        WHERE line_item_usage_start_date >= TIMESTAMP '{start_date_str}'
-          AND line_item_usage_start_date < TIMESTAMP '{end_date_str}'
-          AND line_item_resource_id != ''
-          AND line_item_product_code IN ('AmazonEC2', 'AmazonRDS', 'AWSLambda', 'AmazonS3', 'AWSELB')
-        GROUP BY 1, 2, 3, 4
-    """
-
     try:
-        response = client.start_query_execution(
-            QueryString=query,
-            QueryExecutionContext={'Database': ATHENA_DATABASE_NAME},
-            ResultConfiguration={'OutputLocation': ATHENA_OUTPUT_LOCATION}
-        )
+        for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
+            if 'Contents' not in page:
+                continue
+                
+            for obj in page['Contents']:
+                key = obj['Key']
+                if key.endswith('.parquet'):
+                    parquet_files.append(key)
     except Exception as e:
-        logger.error(f"Failed to submit Athena query: {e}")
-        raise e
+        logger.error(f"Failed to scan S3 for Parquet files: {e}")
+        return []
+                
+    if not parquet_files:
+        logger.warning(f"No Parquet files found in the specified S3 path (s3://{bucket}/{prefix}).")
+        return []
         
-    execution_id = response['QueryExecutionId']
-    logger.info(f"Athena query started with Execution ID: {execution_id}")
-    
-    # -----------------------------------------------------
-    # Polling for Query Completion
-    # -----------------------------------------------------
-    state = 'RUNNING'
-    max_retries = 100 # Adjust timeout as needed (100 * 3s = 5 mins)
-    retries = 0
-    
-    while state in ['QUEUED', 'RUNNING'] and retries < max_retries:
-        status_response = client.get_query_execution(QueryExecutionId=execution_id)
-        state = status_response['QueryExecution']['Status']['State']
-        
-        if state in ['FAILED', 'CANCELLED']:
-            reason = status_response['QueryExecution']['Status'].get('StateChangeReason', 'Unknown Error')
-            logger.error(f"Athena query {execution_id} failed: {reason}")
-            raise RuntimeError(f"Athena query {state}: {reason}")
+    downloaded_paths = []
+    # Download them to /tmp/
+    for key in parquet_files:
+        filename = os.path.basename(key)
+        local_path = os.path.join(download_dir, filename)
+        logger.info(f"Downloading {key} to {local_path}...")
+        try:
+            client.download_file(bucket, key, local_path)
+            downloaded_paths.append(local_path)
+        except Exception as e:
+            logger.error(f"Failed to download {key}: {e}")
             
-        if state == 'SUCCEEDED':
-            logger.info(f"Athena query {execution_id} SUCCEEDED.")
-            break
-            
-        time.sleep(3)
-        retries += 1
-        
-    if state != 'SUCCEEDED':
-         raise TimeoutError(f"Athena query polling timed out. Last state: {state}")
-         
-    # -----------------------------------------------------
-    # Fetching Paginated Results
-    # -----------------------------------------------------
-    return _fetch_paginated_results(client, execution_id)
+    return downloaded_paths
+
+def fetch_cur_data_pandas(customer_session: boto3.Session, start_date_str: str, end_date_str: str) -> List[Dict]:
+    """
+    Downloads CUR parquet files, parses them with Pandas, groups by resource ID, and returns exact format as Athena.
+    """
+    logger.info(f"Starting Pandas CUR processing between {start_date_str} and {end_date_str}")
+    s3_client = customer_session.client('s3')
     
-def _fetch_paginated_results(client, execution_id: str):
-    """
-    Retrieves and parses the results from an Athena query.
-    Handles pagination for large datasets.
-    """
-    logger.info("Fetching Athena query results...")
     parsed_results = []
     
-    has_next = True
-    next_token = None
-    
-    # The first row of the first page is always the header
-    header_skipped = False 
-    
-    while has_next:
-        kwargs = {'QueryExecutionId': execution_id, 'MaxResults': 1000}
-        if next_token:
-            kwargs['NextToken'] = next_token
-            
-        page = client.get_query_results(**kwargs)
+    # Create a temporary directory that automatically cleans up
+    with tempfile.TemporaryDirectory() as temp_dir:
+        local_files = download_latest_cur_files(s3_client, RAW_CUR_BUCKET, RAW_CUR_PREFIX, temp_dir)
         
-        rows = page['ResultSet']['Rows']
+        if not local_files:
+            return []
+            
+        logger.info("Loading Parquet files into Pandas DataFrame...")
         
-        for idx, row in enumerate(rows):
-            if not header_skipped and idx == 0:
-                header_skipped = True
-                continue # Skip header row
-                
-            data = row['Data']
-            
-            # Helper to extract varchar safely
-            def get_val(item):
-                return item.get('VarCharValue', '')
-            
-            try:    
-                row_data = {
-                    "usage_date": get_val(data[0]),
-                    "service_name": get_val(data[1]),
-                    "usage_type": get_val(data[2]),
-                    "resource_id": get_val(data[3]),
-                    "cost": float(get_val(data[4]) or 0.0)
-                }
-                parsed_results.append(row_data)
+        # Load all downloaded parquet files into pandas DataFrame
+        df_list = []
+        for file in local_files:
+            try:
+                # We only need specific columns to save RAM. Using fastparquet.
+                df = pd.read_parquet(file, columns=[
+                    'line_item_usage_start_date',
+                    'line_item_product_code',
+                    'line_item_usage_type',
+                    'line_item_resource_id',
+                    'line_item_unblended_cost'
+                ], engine='fastparquet')
+                df_list.append(df)
             except Exception as e:
-                logger.warning(f"Error parsing row: {data} -> {e}")
+                logger.error(f"Failed to read parquet file {file}: {e}")
                 
-        next_token = page.get('NextToken')
-        has_next = next_token is not None
+        if not df_list:
+            logger.warning("No valid DataFrame could be parsed from downloaded files.")
+            return []
+            
+        # Combine all files into a single master memory buffer
+        master_df = pd.concat(df_list, ignore_index=True)
         
-    logger.info(f"Fetched {len(parsed_results)} cost rows from Athena.")
+        # Filter by date and specific AWS services
+        master_df['line_item_usage_start_date'] = pd.to_datetime(master_df['line_item_usage_start_date'], utc=True)
+        
+        start_date = pd.to_datetime(start_date_str, utc=True)
+        end_date = pd.to_datetime(end_date_str, utc=True)
+        
+        # Filter dataframe for speed
+        mask = (master_df['line_item_usage_start_date'] >= start_date) & \
+               (master_df['line_item_usage_start_date'] < end_date) & \
+               (master_df['line_item_resource_id'] != "") & \
+               (master_df['line_item_product_code'].isin(['AmazonEC2', 'AmazonRDS', 'AWSLambda', 'AmazonS3', 'AWSELB']))
+               
+        filtered_df = master_df.loc[mask].copy()
+        
+        if filtered_df.empty:
+            logger.info("No matching records found after filtering by date and services.")
+            return []
+            
+        # Normalize the date to string YYYY-MM-DD
+        filtered_df['usage_date'] = filtered_df['line_item_usage_start_date'].dt.strftime('%Y-%m-%d')
+        filtered_df['line_item_unblended_cost'] = pd.to_numeric(filtered_df['line_item_unblended_cost'], errors='coerce').fillna(0)
+        
+        # Group by Date, Service, UsageType, ResourceId (Equivalent to SQL GROUP BY)
+        grouped = filtered_df.groupby([
+            'usage_date',
+            'line_item_product_code',
+            'line_item_usage_type',
+            'line_item_resource_id'
+        ])['line_item_unblended_cost'].sum().reset_index()
+        
+        # Convert to list of dicts for exact parity with previous Athena output
+        for _, row in grouped.iterrows():
+            cost = row['line_item_unblended_cost']
+            if cost > 0:
+                parsed_results.append({
+                    "usage_date": row['usage_date'],
+                    "service_name": row['line_item_product_code'],
+                    "usage_type": row['line_item_usage_type'],
+                    "resource_id": row['line_item_resource_id'],
+                    "cost": float(cost)
+                })
+        
+        logger.info(f"Successfully processed {len(parsed_results)} aggregated cost rows from Pandas.")
+        
+    # temp_dir and its contents are automatically deleted here
     return parsed_results

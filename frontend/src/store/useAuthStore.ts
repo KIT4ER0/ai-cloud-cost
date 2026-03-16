@@ -10,7 +10,7 @@ interface AuthState {
     user: User | null;
     token: string | null;
     login: (data: any) => Promise<void>;
-    logout: () => void;
+    logout: () => Promise<void>;
     initialize: () => void;
 }
 
@@ -19,14 +19,39 @@ export const useAuthStore = create<AuthState>((set) => ({
     user: null,
     token: localStorage.getItem('token'),
     initialize: async () => {
-        const token = localStorage.getItem('token');
-        if (token) {
-            const { data: { user } } = await supabase.auth.getUser();
-            if (user && user.email) {
-                set({ isAuthenticated: true, user: { email: user.email }, token });
+        try {
+            const { data: { session } } = await supabase.auth.getSession();
+            if (session) {
+                const token = session.access_token;
+                localStorage.setItem('token', token);
+                set({ 
+                    isAuthenticated: true, 
+                    user: { email: session.user.email || '' }, 
+                    token 
+                });
             } else {
-                set({ isAuthenticated: true, token });
+                // Fallback to localStorage token if session is not immediately available
+                // but usually getSession handles this.
+                const token = localStorage.getItem('token');
+                if (token) {
+                    const { data: { user } } = await supabase.auth.getUser(token);
+                    if (user) {
+                        set({ 
+                            isAuthenticated: true, 
+                            user: { email: user.email || '' }, 
+                            token 
+                        });
+                    } else {
+                        localStorage.removeItem('token');
+                        set({ isAuthenticated: false, user: null, token: null });
+                    }
+                } else {
+                    set({ isAuthenticated: false, user: null, token: null });
+                }
             }
+        } catch (error) {
+            console.error("Initialization failed:", error);
+            set({ isAuthenticated: false, user: null, token: null });
         }
     },
     login: async (data) => {

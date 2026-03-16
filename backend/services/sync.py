@@ -68,21 +68,30 @@ def sync_aws_costs(profile_id: int, days_back: int = 90):
     db = database.SessionLocal()
     logger.info(f"🚀 Starting AWS CUR Sync (Days Back: {days_back})...")
     try:
-        # Load necessary AWS Clients
-        athena_client = boto_client("athena")
-        s3_client = boto_client("s3")
+        user = db.query(models.UserProfile).filter_by(profile_id=profile_id).first()
+        if not user or not user.aws_role_arn:
+            logger.error(f"Cannot sync costs: User {profile_id} has no aws_role_arn configured")
+            return
+            
+        from .aws_sts import get_assumed_session, get_account_id
+        session = get_assumed_session(
+            role_arn=user.aws_role_arn,
+            session_name=f"sync-costs-{profile_id}",
+            external_id=user.aws_external_id,
+        )
+        
         account_id = get_account_id()
-        region = s3_client.meta.region_name or "us-east-1"
+        region = session.region_name or "us-east-1"
         
         end_date = date.today()
         start_date = end_date - timedelta(days=days_back)
         start_date_str = str(start_date)
         end_date_str = str(end_date)
         
-        from .cur_service import query_athena_cur_data
+        from .cur_service import fetch_cur_data_pandas
         
-        # 1. Fetch Data from Athena CUR
-        results = query_athena_cur_data(athena_client, start_date_str, end_date_str)
+        # 1. Fetch Data from S3 and process with Pandas
+        results = fetch_cur_data_pandas(session, start_date_str, end_date_str)
         
         # Buffers for bulk insert
         ec2_costs = []
@@ -169,14 +178,13 @@ def sync_aws_costs(profile_id: int, days_back: int = 90):
             cache_key = (model_res.__name__, resource_key)
             if cache_key not in resource_cache:
                 filters = {
-                    "profile_id": profile_id,
                     "account_id": account_id,
                     "region": region,
                     res_key_field: resource_key
                 }
                 
                 # Add default states for models that need them
-                defaults = {}
+                defaults = {"profile_id": profile_id}
                 if model_res == models.EC2Resource: defaults["state"] = "active"
                 
                 local_rid = _upsert_resource(db, model_res, filters, defaults)
@@ -329,8 +337,8 @@ def _sync_ec2_metrics(db: Session, cw, account_id, region, start_time, end_time,
         pk = _upsert_resource(
             db, 
             models.EC2Resource, 
-            {"profile_id": profile_id, "account_id": account_id, "region": region, "instance_id": inst['id']},
-            {"instance_type": inst['type'], "state": inst['state']}
+            {"account_id": account_id, "region": region, "instance_id": inst['id']},
+            {"profile_id": profile_id, "instance_type": inst['type'], "state": inst['state']}
         )
         
         # Get Metrics (CPU)
