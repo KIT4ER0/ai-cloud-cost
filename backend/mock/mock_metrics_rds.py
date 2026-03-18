@@ -145,12 +145,19 @@ def mock_smart_sync_rds_metrics(db, account_id: str, region: str, profile_id: in
                 read_latency = round(random.uniform(0.001, 0.05), 4)
                 write_latency = round(random.uniform(0.001, 0.05), 4)
 
+                backup_retention = round(resource.allocated_gb * random.uniform(0.01, 0.05), 2)
+                snapshot_storage = round(resource.allocated_gb * random.uniform(0.05, 0.15), 2)
+                running_hours = 24.0
+
                 metric_rows.append({
                     "rds_resource_id": resource.rds_resource_id,
                     "metric_date": dt_iso,
+                    "running_hours": running_hours,
                     "cpu_utilization": cpu,
                     "database_connections": connections,
                     "free_storage_space": free_storage,
+                    "backup_retention_storage_gb": backup_retention,
+                    "snapshot_storage_gb": snapshot_storage,
                     "data_transfer": data_transfer,
                     "freeable_memory": freeable_memory,
                     "swap_usage": swap_usage,
@@ -191,9 +198,12 @@ def mock_smart_sync_rds_metrics(db, account_id: str, region: str, profile_id: in
                 stmt = stmt.on_conflict_do_update(
                     index_elements=["rds_resource_id", "metric_date"],
                     set_={
+                        "running_hours": stmt.excluded.running_hours,
                         "cpu_utilization": stmt.excluded.cpu_utilization,
                         "database_connections": stmt.excluded.database_connections,
                         "free_storage_space": stmt.excluded.free_storage_space,
+                        "backup_retention_storage_gb": stmt.excluded.backup_retention_storage_gb,
+                        "snapshot_storage_gb": stmt.excluded.snapshot_storage_gb,
                         "data_transfer": stmt.excluded.data_transfer,
                         "freeable_memory": stmt.excluded.freeable_memory,
                         "swap_usage": stmt.excluded.swap_usage,

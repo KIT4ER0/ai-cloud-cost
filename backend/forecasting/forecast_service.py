@@ -27,7 +27,7 @@ SERVICE_METRIC_MAP: dict[str, dict] = {
         "resource_model": models.EC2Resource,
         "resource_id_col": "ec2_resource_id",
         "resource_lookup": "instance_id",
-        "metrics": ["cpu_utilization", "network_in", "network_out", "hours_running"],
+        "metrics": ["network_out", "hours_running","eip_hours_idle","ebs_snapshot_total_gb"],
     },
     "rds": {
         "model": models.RDSMetric,
@@ -35,8 +35,12 @@ SERVICE_METRIC_MAP: dict[str, dict] = {
         "resource_id_col": "rds_resource_id",
         "resource_lookup": "db_identifier",
         "metrics": [
+            "running_hours", "free_storage_space",
+            "backup_retention_storage_gb", "snapshot_storage_gb",
+            "data_transfer", "read_iops", "write_iops",
             "cpu_utilization", "database_connections",
-            "free_storage_space", "data_transfer",
+            "freeable_memory", "swap_usage",
+            "read_latency", "write_latency",
         ],
     },
     "lambda": {
@@ -44,7 +48,7 @@ SERVICE_METRIC_MAP: dict[str, dict] = {
         "resource_model": models.LambdaResource,
         "resource_id_col": "lambda_resource_id",
         "resource_lookup": "function_name",
-        "metrics": ["duration_p95", "invocations", "errors"],
+        "metrics": ["duration_avg", "duration_p95", "invocations", "errors"],
     },
     "s3": {
         "model": models.S3Metric,
@@ -58,7 +62,7 @@ SERVICE_METRIC_MAP: dict[str, dict] = {
         "resource_model": models.ALBResource,
         "resource_id_col": "alb_resource_id",
         "resource_lookup": "lb_name",
-        "metrics": ["request_count", "response_time_p95", "http_5xx_count", "active_conn_count"],
+        "metrics": ["request_count", "processed_bytes", "new_conn_count", "response_time_p95", "http_5xx_count", "active_conn_count"],
     },
 }
 

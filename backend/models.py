@@ -1,6 +1,6 @@
 from sqlalchemy import Column, Integer, String, Float, Date, DateTime, ForeignKey, Boolean, Text, BigInteger, Numeric, UniqueConstraint, JSON
 from sqlalchemy.orm import relationship
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import JSONB, ARRAY
 try:
     from .database import Base
 except ImportError:
@@ -75,8 +75,8 @@ class EC2Metric(Base):
     cpu_utilization = Column(Float)          # % → DOUBLE PRECISION
     cpu_max = Column(Float)
     cpu_p99 = Column(Float)
-    network_in = Column(BigInteger)           # bytes → BIGINT
-    network_out = Column(BigInteger)          # bytes → BIGINT
+    network_in = Column(Float)              # GB
+    network_out = Column(Float)             # GB
     network_egress_gb = Column(Float)
     network_cross_az_gb = Column(Float)
     hours_running = Column(Float)             # hours -> DOUBLE PRECISION
@@ -212,6 +212,7 @@ class LambdaMetric(Base):
     lambda_metric_id = Column(BigInteger, primary_key=True, autoincrement=True)
     lambda_resource_id = Column(BigInteger, ForeignKey("cloudcost.lambda_resources.lambda_resource_id", ondelete="CASCADE"), nullable=False)
     metric_date = Column(Date, nullable=False, index=True)
+    duration_avg = Column(Float)
     duration_p95 = Column(Float)              # time → DOUBLE PRECISION
     invocations = Column(BigInteger)           # count → BIGINT
     errors = Column(BigInteger)                # count → BIGINT
@@ -276,14 +277,21 @@ class RDSMetric(Base):
     rds_metric_id = Column(BigInteger, primary_key=True, autoincrement=True)
     rds_resource_id = Column(BigInteger, ForeignKey("cloudcost.rds_resources.rds_resource_id", ondelete="CASCADE"), nullable=False)
     metric_date = Column(Date, nullable=False, index=True)
-    cpu_utilization = Column(Float)           # % → DOUBLE PRECISION
-    database_connections = Column(BigInteger)  # count → BIGINT
-    free_storage_space = Column(BigInteger)    # bytes → BIGINT
+
+    # Cost metrics
+    running_hours = Column(Float)
+    free_storage_space = Column(BigInteger)
+    backup_retention_storage_gb = Column(Float)
+    snapshot_storage_gb = Column(Float)
     data_transfer = Column(BigInteger)
-    freeable_memory = Column(BigInteger)
-    swap_usage = Column(BigInteger)
     read_iops = Column(Float)
     write_iops = Column(Float)
+
+    # Performance metrics
+    cpu_utilization = Column(Float)           # % → DOUBLE PRECISION
+    database_connections = Column(BigInteger)  # count → BIGINT
+    freeable_memory = Column(BigInteger)
+    swap_usage = Column(BigInteger)
     read_latency = Column(Float)
     write_latency = Column(Float)
 
@@ -432,6 +440,8 @@ class ALBMetric(Base):
     alb_resource_id = Column(BigInteger, ForeignKey("cloudcost.alb_resources.alb_resource_id", ondelete="CASCADE"), nullable=False)
     metric_date = Column(Date, nullable=False, index=True)
     request_count = Column(BigInteger)        # count → BIGINT
+    processed_bytes = Column(BigInteger)
+    new_conn_count = Column(BigInteger)
     response_time_p95 = Column(Float)          # time → DOUBLE PRECISION
     http_5xx_count = Column(BigInteger)        # count → BIGINT
     active_conn_count = Column(BigInteger)     # count → BIGINT
@@ -514,3 +524,101 @@ class ForecastValue(Base):
     forecast_value = Column(Float, nullable=False)
 
     run = relationship("ForecastRun", back_populates="values")
+
+
+# =======================
+# Per-Service Forecast Results (XGBoost / ML)
+# =======================
+class EC2ForecastResult(Base):
+    __tablename__ = "ec2_forecast_results"
+    __table_args__ = {"schema": "cloudcost"}
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    resource_id = Column(BigInteger, ForeignKey("cloudcost.ec2_resources.ec2_resource_id", ondelete="CASCADE"), nullable=False, index=True)
+    metric = Column(Text, nullable=False)
+    method = Column(Text, nullable=False, default="xgboost")
+    forecast_dates = Column(ARRAY(Date), nullable=False)
+    forecast_values = Column(ARRAY(Float), nullable=False)
+    backtest_dates = Column(ARRAY(Date))
+    backtest_actuals = Column(ARRAY(Float))
+    backtest_preds = Column(ARRAY(Float))
+    mae = Column(Float)
+    rmse = Column(Float)
+    mape = Column(Float)
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+
+
+class RDSForecastResult(Base):
+    __tablename__ = "rds_forecast_results"
+    __table_args__ = {"schema": "cloudcost"}
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    resource_id = Column(BigInteger, ForeignKey("cloudcost.rds_resources.rds_resource_id", ondelete="CASCADE"), nullable=False, index=True)
+    metric = Column(Text, nullable=False)
+    method = Column(Text, nullable=False, default="xgboost")
+    forecast_dates = Column(ARRAY(Date), nullable=False)
+    forecast_values = Column(ARRAY(Float), nullable=False)
+    backtest_dates = Column(ARRAY(Date))
+    backtest_actuals = Column(ARRAY(Float))
+    backtest_preds = Column(ARRAY(Float))
+    mae = Column(Float)
+    rmse = Column(Float)
+    mape = Column(Float)
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+
+
+class LambdaForecastResult(Base):
+    __tablename__ = "lambda_forecast_results"
+    __table_args__ = {"schema": "cloudcost"}
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    resource_id = Column(BigInteger, ForeignKey("cloudcost.lambda_resources.lambda_resource_id", ondelete="CASCADE"), nullable=False, index=True)
+    metric = Column(Text, nullable=False)
+    method = Column(Text, nullable=False, default="xgboost")
+    forecast_dates = Column(ARRAY(Date), nullable=False)
+    forecast_values = Column(ARRAY(Float), nullable=False)
+    backtest_dates = Column(ARRAY(Date))
+    backtest_actuals = Column(ARRAY(Float))
+    backtest_preds = Column(ARRAY(Float))
+    mae = Column(Float)
+    rmse = Column(Float)
+    mape = Column(Float)
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+
+
+class S3ForecastResult(Base):
+    __tablename__ = "s3_forecast_results"
+    __table_args__ = {"schema": "cloudcost"}
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    resource_id = Column(BigInteger, ForeignKey("cloudcost.s3_resources.s3_resource_id", ondelete="CASCADE"), nullable=False, index=True)
+    metric = Column(Text, nullable=False)
+    method = Column(Text, nullable=False, default="xgboost")
+    forecast_dates = Column(ARRAY(Date), nullable=False)
+    forecast_values = Column(ARRAY(Float), nullable=False)
+    backtest_dates = Column(ARRAY(Date))
+    backtest_actuals = Column(ARRAY(Float))
+    backtest_preds = Column(ARRAY(Float))
+    mae = Column(Float)
+    rmse = Column(Float)
+    mape = Column(Float)
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+
+
+class ALBForecastResult(Base):
+    __tablename__ = "alb_forecast_results"
+    __table_args__ = {"schema": "cloudcost"}
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    resource_id = Column(BigInteger, ForeignKey("cloudcost.alb_resources.alb_resource_id", ondelete="CASCADE"), nullable=False, index=True)
+    metric = Column(Text, nullable=False)
+    method = Column(Text, nullable=False, default="xgboost")
+    forecast_dates = Column(ARRAY(Date), nullable=False)
+    forecast_values = Column(ARRAY(Float), nullable=False)
+    backtest_dates = Column(ARRAY(Date))
+    backtest_actuals = Column(ARRAY(Float))
+    backtest_preds = Column(ARRAY(Float))
+    mae = Column(Float)
+    rmse = Column(Float)
+    mape = Column(Float)
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)

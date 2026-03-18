@@ -183,6 +183,8 @@ def mock_smart_sync_alb_metrics(db, account_id: str, region: str, profile_id: in
                     "alb_resource_id": record.alb_resource_id,
                     "metric_date": dt,
                     "request_count": int(req_base * random.uniform(0.8, 1.2)),
+                    "processed_bytes": int(req_base * random.uniform(1024, 10240)),  # 1-10 KB per request
+                    "new_conn_count": int(req_base * random.uniform(0.01, 0.05)),   # 1-5% new connections
                     "response_time_p95": random.uniform(0.05, 0.15),
                     "http_5xx_count": random.randint(0, 5),
                     "active_conn_count": random.randint(10, 50),
@@ -192,12 +194,24 @@ def mock_smart_sync_alb_metrics(db, account_id: str, region: str, profile_id: in
                     "alb_resource_id": record.alb_resource_id,
                     "metric_date": dt,
                     "request_count": int(200000 * random.uniform(0.9, 1.1)),
+                    "processed_bytes": int(200000 * random.uniform(2048, 20480)),
+                    "new_conn_count": random.randint(1000, 5000),
                     "active_conn_count": random.randint(100, 300),
                 })
 
         if metric_rows:
             stmt_m = insert(models.ALBMetric).values(metric_rows)
-            stmt_m = stmt_m.on_conflict_do_nothing()
+            stmt_m = stmt_m.on_conflict_do_update(
+                index_elements=["alb_resource_id", "metric_date"],
+                set_={
+                    "request_count": stmt_m.excluded.request_count,
+                    "processed_bytes": stmt_m.excluded.processed_bytes,
+                    "new_conn_count": stmt_m.excluded.new_conn_count,
+                    "response_time_p95": stmt_m.excluded.response_time_p95,
+                    "http_5xx_count": stmt_m.excluded.http_5xx_count,
+                    "active_conn_count": stmt_m.excluded.active_conn_count,
+                },
+            )
             db.execute(stmt_m)
 
         logger.info(f"MOCK ALB sync done: {lb_name} ({lb_type})")

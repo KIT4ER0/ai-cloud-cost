@@ -16,7 +16,11 @@ from sqlalchemy.orm import Session
 from ..database import get_db
 from ..auth import get_current_user
 from ..models import UserProfile
-from ..schemas import ForecastRunOut
+from ..schemas import (
+    ForecastRunOut,
+    EnsembleForecastRequest,
+    EnsembleForecastResponse
+)
 from .forecast_service import (
     SERVICE_METRIC_MAP,
     get_available_metrics,
@@ -26,6 +30,7 @@ from .forecast_service import (
     get_forecast_runs,
     get_forecast_run_by_id,
 )
+from .ensemble_forecast_service import run_ensemble_forecast
 
 router = APIRouter(prefix="/forecast", tags=["Forecast"])
 
@@ -158,3 +163,33 @@ def get_run_detail(
     if run.profile_id != current_user.profile_id:
         raise HTTPException(status_code=403, detail="Access denied")
     return run
+
+
+# ─── Ensemble Forecast Endpoint ───────────────────────────────────
+
+@router.post("/ensemble", response_model=EnsembleForecastResponse)
+def run_ensemble(
+    req: EnsembleForecastRequest,
+    db: Session = Depends(get_db),
+    current_user: UserProfile = Depends(get_current_user),
+):
+    """
+    Run Ensemble forecast for a resource (ETS + SARIMA + Ridge).
+
+    - If `metric` is provided, forecasts only that metric.
+    - If `metric` is omitted, forecasts all available metrics for the service.
+    - Falls back to baseline (moving_average) if Ensemble fails.
+    - Results are saved to the per-service forecast_results table.
+    """
+    try:
+        # Replaces XGBoost logic with the new 3-model ensemble
+        result = run_ensemble_forecast(
+            db=db,
+            service=req.service,
+            resource_id=req.resource_id,
+            metric=req.metric,
+            horizon=req.horizon,
+        )
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))

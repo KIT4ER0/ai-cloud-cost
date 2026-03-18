@@ -140,6 +140,7 @@ class LambdaResourceOut(BaseModel):
 
 class LambdaMetricOut(BaseModel):
     metric_date: str
+    duration_avg: Optional[float] = None
     duration_p95: Optional[float] = None
     invocations: Optional[float] = None
     errors: Optional[float] = None
@@ -162,14 +163,17 @@ class RDSResourceOut(BaseModel):
 
 class RDSMetricOut(BaseModel):
     metric_date: str
-    cpu_utilization: Optional[float] = None
-    database_connections: Optional[float] = None
+    running_hours: Optional[float] = None
     free_storage_space: Optional[float] = None
+    backup_retention_storage_gb: Optional[float] = None
+    snapshot_storage_gb: Optional[float] = None
     data_transfer: Optional[float] = None
-    freeable_memory: Optional[float] = None
-    swap_usage: Optional[float] = None
     read_iops: Optional[float] = None
     write_iops: Optional[float] = None
+    cpu_utilization: Optional[float] = None
+    database_connections: Optional[float] = None
+    freeable_memory: Optional[float] = None
+    swap_usage: Optional[float] = None
     read_latency: Optional[float] = None
     write_latency: Optional[float] = None
     class Config:
@@ -212,6 +216,8 @@ class ALBResourceOut(BaseModel):
 class ALBMetricOut(BaseModel):
     metric_date: str
     request_count: Optional[float] = None
+    processed_bytes: Optional[float] = None
+    new_conn_count: Optional[float] = None
     response_time_p95: Optional[float] = None
     http_5xx_count: Optional[float] = None
     active_conn_count: Optional[float] = None
@@ -289,3 +295,46 @@ class ForecastRunOut(BaseModel):
     values: List[ForecastValueOut] = []
     class Config:
         from_attributes = True
+
+
+# =======================
+# XGBoost Forecast
+# =======================
+class XGBoostForecastRequest(BaseModel):
+    resource_id: int
+    service: str
+    metric: Optional[str] = None   # None = run all metrics for the service
+    horizon: int = 30
+
+
+class XGBoostPerformanceMetrics(BaseModel):
+    mae: float
+    rmse: float
+    mape: float
+    training_rows: int
+    test_rows: int
+
+class XGBoostMetricResult(BaseModel):
+    metric: str
+    method: str
+    forecast_dates: List[date]
+    forecast_values: List[float]
+    backtest_dates: Optional[List[date]] = None
+    backtest_actuals: Optional[List[float]] = None
+    backtest_preds: Optional[List[float]] = None
+    fallback: bool = False
+    performance_metrics: Optional[XGBoostPerformanceMetrics] = None
+
+
+# Ensemble Forecast
+class EnsembleForecastRequest(BaseModel):
+    resource_id: int
+    service: str
+    metric: Optional[str] = None
+    horizon: int = 30
+
+
+class EnsembleForecastResponse(BaseModel):
+    service: str
+    resource_id: int
+    results: List[XGBoostMetricResult]

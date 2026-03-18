@@ -103,9 +103,10 @@ def mock_smart_sync_lambda_metrics(db, account_id: str, region: str, profile_id:
                 metric_rows.append({
                     "lambda_resource_id": resource.lambda_resource_id,
                     "metric_date": dt_iso,
+                    "duration_avg": round(avg_duration_ms, 3),
+                    "duration_p95": round(duration_p95, 3),
                     "invocations": invocations,
                     "errors": errors,
-                    "duration_p95": round(duration_p95, 3),
                 })
 
                 request_cost = _calculate_request_cost(invocations)
@@ -142,9 +143,10 @@ def mock_smart_sync_lambda_metrics(db, account_id: str, region: str, profile_id:
                 stmt = stmt.on_conflict_do_update(
                     index_elements=["lambda_resource_id", "metric_date"],
                     set_={
+                        "duration_avg": stmt.excluded.duration_avg,
+                        "duration_p95": stmt.excluded.duration_p95,
                         "invocations": stmt.excluded.invocations,
                         "errors": stmt.excluded.errors,
-                        "duration_p95": stmt.excluded.duration_p95,
                     },
                 )
                 db.execute(stmt)

@@ -47,8 +47,8 @@ CREATE TABLE IF NOT EXISTS ec2_metrics (
   cpu_utilization     DOUBLE PRECISION,
   cpu_max             DOUBLE PRECISION,
   cpu_p99             DOUBLE PRECISION,
-  network_in          BIGINT,
-  network_out         BIGINT,
+  network_in          DOUBLE PRECISION,
+  network_out         DOUBLE PRECISION,
   network_egress_gb   DOUBLE PRECISION,
   network_cross_az_gb DOUBLE PRECISION,
   hours_running       DOUBLE PRECISION,
@@ -150,6 +150,7 @@ CREATE TABLE IF NOT EXISTS lambda_metrics (
   lambda_metric_id       BIGSERIAL PRIMARY KEY,
   lambda_resource_id     BIGINT NOT NULL REFERENCES lambda_resources(lambda_resource_id) ON DELETE CASCADE,
   metric_date            DATE NOT NULL,
+  duration_avg           DOUBLE PRECISION,
   duration_p95           DOUBLE PRECISION,
   invocations            BIGINT,
   errors                 BIGINT,
@@ -188,13 +189,27 @@ CREATE TABLE IF NOT EXISTS rds_resources (
 );
 
 CREATE TABLE IF NOT EXISTS rds_metrics (
-  rds_metric_id         BIGSERIAL PRIMARY KEY,
-  rds_resource_id       BIGINT NOT NULL REFERENCES rds_resources(rds_resource_id) ON DELETE CASCADE,
-  metric_date           DATE NOT NULL,
-  cpu_utilization       DOUBLE PRECISION,
-  database_connections  BIGINT,
-  free_storage_space    BIGINT,
-  data_transfer         BIGINT,
+  rds_metric_id                BIGSERIAL PRIMARY KEY,
+  rds_resource_id              BIGINT NOT NULL REFERENCES rds_resources(rds_resource_id) ON DELETE CASCADE,
+  metric_date                  DATE NOT NULL,
+
+  -- Cost metrics
+  running_hours                DOUBLE PRECISION,
+  free_storage_space           BIGINT,
+  backup_retention_storage_gb  DOUBLE PRECISION,
+  snapshot_storage_gb          DOUBLE PRECISION,
+  data_transfer                BIGINT,
+  read_iops                    DOUBLE PRECISION,
+  write_iops                   DOUBLE PRECISION,
+
+  -- Performance metrics
+  cpu_utilization              DOUBLE PRECISION,
+  database_connections         BIGINT,
+  freeable_memory              BIGINT,
+  swap_usage                   BIGINT,
+  read_latency                 DOUBLE PRECISION,
+  write_latency                DOUBLE PRECISION,
+
   UNIQUE (rds_resource_id, metric_date)
 );
 
@@ -222,14 +237,6 @@ ALTER TABLE rds_resources
   ADD COLUMN IF NOT EXISTS pricing_model TEXT DEFAULT 'on-demand',
   ADD COLUMN IF NOT EXISTS team TEXT,
   ADD COLUMN IF NOT EXISTS created_date DATE;
-
-ALTER TABLE rds_metrics 
-  ADD COLUMN IF NOT EXISTS freeable_memory BIGINT,
-  ADD COLUMN IF NOT EXISTS swap_usage BIGINT,
-  ADD COLUMN IF NOT EXISTS read_iops DOUBLE PRECISION,
-  ADD COLUMN IF NOT EXISTS write_iops DOUBLE PRECISION,
-  ADD COLUMN IF NOT EXISTS read_latency DOUBLE PRECISION,
-  ADD COLUMN IF NOT EXISTS write_latency DOUBLE PRECISION;
 
 -- Note: In Postgres you cannot easily add a constraint 'IF NOT EXISTS' directly in ALTER TABLE. 
 -- However, we can drop it first then add it to make it idempotent in a schema file.
@@ -336,6 +343,8 @@ CREATE TABLE IF NOT EXISTS alb_metrics (
   alb_resource_id       BIGINT NOT NULL REFERENCES alb_resources(alb_resource_id) ON DELETE CASCADE,
   metric_date           DATE NOT NULL,
   request_count         BIGINT,
+  processed_bytes       BIGINT,
+  new_conn_count        BIGINT,
   response_time_p95     DOUBLE PRECISION,
   http_5xx_count        BIGINT,
   active_conn_count     BIGINT,
@@ -417,3 +426,93 @@ CREATE TABLE IF NOT EXISTS forecast_values (
 
 CREATE INDEX IF NOT EXISTS idx_forecast_values_run    ON forecast_values(run_id);
 CREATE INDEX IF NOT EXISTS idx_forecast_values_date   ON forecast_values(forecast_date);
+
+
+-- =========================
+-- Per-service Forecast Results (XGBoost / ML)
+-- =========================
+CREATE TABLE IF NOT EXISTS ec2_forecast_results (
+    id              BIGSERIAL PRIMARY KEY,
+    resource_id     BIGINT NOT NULL REFERENCES ec2_resources(ec2_resource_id) ON DELETE CASCADE,
+    metric          TEXT NOT NULL,
+    method          TEXT NOT NULL DEFAULT 'xgboost',
+    forecast_dates  DATE[] NOT NULL,
+    forecast_values FLOAT[] NOT NULL,
+    backtest_dates   DATE[],
+    backtest_actuals FLOAT[],
+    backtest_preds   FLOAT[],
+    mae              FLOAT,
+    rmse             FLOAT,
+    mape             FLOAT,
+    created_at      TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS rds_forecast_results (
+    id              BIGSERIAL PRIMARY KEY,
+    resource_id     BIGINT NOT NULL REFERENCES rds_resources(rds_resource_id) ON DELETE CASCADE,
+    metric          TEXT NOT NULL,
+    method          TEXT NOT NULL DEFAULT 'xgboost',
+    forecast_dates  DATE[] NOT NULL,
+    forecast_values FLOAT[] NOT NULL,
+    backtest_dates   DATE[],
+    backtest_actuals FLOAT[],
+    backtest_preds   FLOAT[],
+    mae              FLOAT,
+    rmse             FLOAT,
+    mape             FLOAT,
+    created_at      TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS lambda_forecast_results (
+    id              BIGSERIAL PRIMARY KEY,
+    resource_id     BIGINT NOT NULL REFERENCES lambda_resources(lambda_resource_id) ON DELETE CASCADE,
+    metric          TEXT NOT NULL,
+    method          TEXT NOT NULL DEFAULT 'xgboost',
+    forecast_dates  DATE[] NOT NULL,
+    forecast_values FLOAT[] NOT NULL,
+    backtest_dates   DATE[],
+    backtest_actuals FLOAT[],
+    backtest_preds   FLOAT[],
+    mae              FLOAT,
+    rmse             FLOAT,
+    mape             FLOAT,
+    created_at      TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS s3_forecast_results (
+    id              BIGSERIAL PRIMARY KEY,
+    resource_id     BIGINT NOT NULL REFERENCES s3_resources(s3_resource_id) ON DELETE CASCADE,
+    metric          TEXT NOT NULL,
+    method          TEXT NOT NULL DEFAULT 'xgboost',
+    forecast_dates  DATE[] NOT NULL,
+    forecast_values FLOAT[] NOT NULL,
+    backtest_dates   DATE[],
+    backtest_actuals FLOAT[],
+    backtest_preds   FLOAT[],
+    mae              FLOAT,
+    rmse             FLOAT,
+    mape             FLOAT,
+    created_at      TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS alb_forecast_results (
+    id              BIGSERIAL PRIMARY KEY,
+    resource_id     BIGINT NOT NULL REFERENCES alb_resources(alb_resource_id) ON DELETE CASCADE,
+    metric          TEXT NOT NULL,
+    method          TEXT NOT NULL DEFAULT 'xgboost',
+    forecast_dates  DATE[] NOT NULL,
+    forecast_values FLOAT[] NOT NULL,
+    backtest_dates   DATE[],
+    backtest_actuals FLOAT[],
+    backtest_preds   FLOAT[],
+    mae              FLOAT,
+    rmse             FLOAT,
+    mape             FLOAT,
+    created_at      TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_ec2_forecast_res ON ec2_forecast_results(resource_id);
+CREATE INDEX IF NOT EXISTS idx_rds_forecast_res ON rds_forecast_results(resource_id);
+CREATE INDEX IF NOT EXISTS idx_lambda_forecast_res ON lambda_forecast_results(resource_id);
+CREATE INDEX IF NOT EXISTS idx_s3_forecast_res ON s3_forecast_results(resource_id);
+CREATE INDEX IF NOT EXISTS idx_alb_forecast_res ON alb_forecast_results(resource_id);
