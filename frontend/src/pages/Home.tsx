@@ -2,12 +2,10 @@ import { Link } from 'react-router-dom'
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { BarChart, Bar, ResponsiveContainer, XAxis, YAxis, Tooltip } from "recharts"
-import { DollarSign, TrendingUp, TrendingDown, ArrowRight, RefreshCw, Cpu, Loader2 } from 'lucide-react'
+import { DollarSign, TrendingUp, TrendingDown, ArrowRight, RefreshCw, Cpu, Loader2, AlertTriangle } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import { api } from '@/lib/api'
 import { Button } from "@/components/ui/button"
-import { RECOMMENDATIONS } from '@/types/recommendation'
-import { getDashboardSummary } from '@/lib/dashboard-data'
 
 export default function Home() {
     const [isSyncing, setIsSyncing] = useState(false);
@@ -15,18 +13,21 @@ export default function Home() {
     const [costAnalysis, setCostAnalysis] = useState<any>(null);
     const [monthlyTrend, setMonthlyTrend] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(true);
+    const [recommendations, setRecommendations] = useState<any[]>([]);
 
     useEffect(() => {
         const fetchData = async () => {
             setIsLoading(true);
             try {
-                const [summaryData, costData, trendData] = await Promise.all([
+                const [summaryData, costData, trendData, recData] = await Promise.all([
                     api.monitoring.getSummary(),
                     api.costs.getAnalysis("this_month"),
-                    api.costs.getAnalysis("last_6_months")
+                    api.costs.getAnalysis("last_6_months"),
+                    api.recommendations.list()
                 ]);
                 setResourceSummary(summaryData);
                 setCostAnalysis(costData);
+                setRecommendations(recData ?? []);
                 
                 // Process monthly trend data
                 const processedTrend = trendData?.trend?.map((item: any) => ({
@@ -59,8 +60,38 @@ export default function Home() {
         }
     };
 
-    // Get real-time data from shared data module
-    const mockDashboard = getDashboardSummary()
+    // Map label for rec_type
+    const REC_LABELS: Record<string, { title: string; severity: 'High' | 'Medium' | 'Low' }> = {
+        EC2_RIGHTSIZE_CPU_LOW: { title: 'Resize EC2 Instance', severity: 'High' },
+        EC2_IDLE_STOPPED: { title: 'Terminate Idle EC2', severity: 'High' },
+        EC2_EIP_UNASSOCIATED: { title: 'Release Unused Elastic IP', severity: 'Medium' },
+        EC2_EBS_UNATTACHED: { title: 'Delete Unattached EBS Volume', severity: 'Medium' },
+        EC2_EBS_SNAPSHOT_OLD: { title: 'Delete Old EBS Snapshot', severity: 'Low' },
+        RDS_RIGHTSIZE_CPU_LOW: { title: 'Downsize RDS Instance', severity: 'High' },
+        RDS_IDLE_STOP: { title: 'Stop Idle RDS Instance', severity: 'High' },
+        RDS_HIGH_SNAPSHOT_COST: { title: 'Review RDS Snapshots', severity: 'Medium' },
+        RDS_MEMORY_BOTTLENECK: { title: 'Upsize RDS Memory', severity: 'High' },
+        LAMBDA_OPTIMIZE_DURATION: { title: 'Optimize Lambda Code', severity: 'High' },
+        LAMBDA_HIGH_ERROR_WASTE: { title: 'Fix Lambda Errors', severity: 'High' },
+        LAMBDA_UNUSED_CLEANUP: { title: 'Delete Unused Lambda', severity: 'Low' },
+        DT_CROSS_AZ_WASTE: { title: 'Reduce Cross-AZ Traffic', severity: 'Medium' },
+        DT_HIGH_INTERNET_EGRESS: { title: 'Add CDN / Caching Layer', severity: 'Medium' },
+        ALB_IDLE_DELETE: { title: 'Delete Idle Load Balancer', severity: 'High' },
+        ALB_HIGH_5XX_ERRORS: { title: 'Fix ALB 5XX Errors', severity: 'High' },
+        CLB_MIGRATE_TO_ALB: { title: 'Migrate Classic LB → ALB', severity: 'Medium' },
+        S3_LIFECYCLE_COLD: { title: 'Set S3 Lifecycle Policy', severity: 'Medium' },
+        S3_EMPTY_BUCKET: { title: 'Delete Empty S3 Bucket', severity: 'Low' },
+    }
+
+    // Sort by High first, take top 3
+    const severityOrder = { High: 0, Medium: 1, Low: 2 }
+    const topRecommendations = [...recommendations]
+        .sort((a, b) => {
+            const sa = REC_LABELS[a.rec_type]?.severity ?? 'Low'
+            const sb = REC_LABELS[b.rec_type]?.severity ?? 'Low'
+            return (severityOrder[sa] ?? 2) - (severityOrder[sb] ?? 2)
+        })
+        .slice(0, 3)
 
     // Calculate dynamic values from real data if available
     const totalCost = costAnalysis?.summary?.totalCost ?? 0;
@@ -68,14 +99,10 @@ export default function Home() {
     const costChange = prevTotalCost > 0 ? ((totalCost - prevTotalCost) / prevTotalCost) * 100 : 0;
     const costChangeDirection = costChange >= 0 ? 'up' : 'down';
     const forecastCost = costAnalysis?.summary?.projectedMonthEnd ?? 0;
-    
+
     // Map trend data for chart
     const costTrend = monthlyTrend.length > 0 ? monthlyTrend : [];
 
-    // Take top 3 recommendations for the summary
-    const topRecommendations = RECOMMENDATIONS.slice(0, 3)
-
-    // Format currency
     const formatCurrency = (value: number) => {
         return new Intl.NumberFormat('en-US', {
             style: 'currency',
@@ -202,41 +229,42 @@ export default function Home() {
                         <CardHeader className="pb-3">
                             <div className="flex items-center justify-between">
                                 <CardTitle className="text-lg">Recommendations</CardTitle>
-                                <Link
-                                    to="/recommend"
-                                    className="text-sm text-primary hover:underline flex items-center gap-1"
-                                >
+                                <Link to="/recommend" className="text-sm text-primary hover:underline flex items-center gap-1">
                                     View all
                                     <ArrowRight className="h-3 w-3" />
                                 </Link>
                             </div>
                             <p className="text-sm text-muted-foreground">
-                                Potential savings: <span className="font-semibold text-green-600">${mockDashboard.totalPotentialSavings}/mo</span>
+                                {recommendations.length > 0 ? (
+                                    <span><span className="font-semibold text-orange-600">{recommendations.length}</span> issues found</span>
+                                ) : (
+                                    <span className="text-green-600 font-semibold">✓ All good!</span>
+                                )}
                             </p>
                         </CardHeader>
-                        <CardContent className="space-y-4">
-                            {topRecommendations.map((rec) => (
-                                <div
-                                    key={rec.id}
-                                    className="flex items-start justify-between p-3 rounded-lg bg-gray-50 hover:bg-gray-100 transition-colors"
-                                >
-                                    <div className="flex-1 min-w-0">
-                                        <div className="flex items-center gap-2 mb-1">
-                                            <span className="font-medium text-sm truncate">{rec.title}</span>
-                                            <Badge
-                                                variant={rec.severity === 'High' ? 'destructive' : 'secondary'}
-                                                className="text-xs"
-                                            >
-                                                {rec.severity}
-                                            </Badge>
+                        <CardContent className="space-y-3">
+                            {topRecommendations.length === 0 ? (
+                                <p className="text-sm text-muted-foreground text-center py-4">No recommendations yet.<br />Go to Recommend page to run analysis.</p>
+                            ) : (
+                                topRecommendations.map((rec) => {
+                                    const label = REC_LABELS[rec.rec_type]
+                                    const severity = label?.severity ?? 'Medium'
+                                    return (
+                                        <div key={rec.rec_id} className="flex items-start justify-between p-3 rounded-lg bg-gray-50 hover:bg-gray-100 transition-colors">
+                                            <div className="flex-1 min-w-0">
+                                                <div className="flex items-center gap-2 mb-1">
+                                                    {severity === 'High' && <AlertTriangle className="h-3 w-3 text-red-500 flex-shrink-0" />}
+                                                    <span className="font-medium text-sm truncate">{label?.title ?? rec.rec_type}</span>
+                                                </div>
+                                                <div className="flex items-center gap-2">
+                                                    <Badge variant={severity === 'High' ? 'destructive' : 'secondary'} className="text-xs">{severity}</Badge>
+                                                    <span className="text-xs text-muted-foreground truncate">{rec.resource_key}</span>
+                                                </div>
+                                            </div>
                                         </div>
-                                        <div className="flex items-center gap-1 text-green-600 text-sm">
-                                            <TrendingDown className="h-3 w-3" />
-                                            <span className="font-medium">${rec.savingsPerMonth}/mo</span>
-                                        </div>
-                                    </div>
-                                </div>
-                            ))}
+                                    )
+                                })
+                            )}
                         </CardContent>
                     </Card>
                 </div>

@@ -1,0 +1,145 @@
+# ใช้ข้อมูลถึง "เมื่อวาน" เป็นค่ามาตรฐาน (จะถูกแปลงเป็นวันที่จริงในสคริปต์)
+as_of: "yesterday"
+
+rules:
+  # ---------- EC2 / EBS ----------
+  EC2_RIGHTSIZE_CPU_LOW:
+    enabled: true
+    cpu_p99_7d_lt: 20         # เช็กจากฟิลด์ cpu_p99 ต่ำกว่า 20% ในรอบ 7 วัน
+    recommendation: "downsize"
+    confidence: 0.85
+
+  EC2_IDLE_STOPPED:
+    enabled: true
+    hours_running_7d_eq: 0    # เช็กจากฟิลด์ ec2_metrics.hours_running รวม 7 วันเป็น 0 (แปลว่าถูก Stop ทิ้งไว้)
+    recommendation: "terminate_or_snapshot" # เครื่องปิดทิ้งไว้นาน กินค่า EBS เปล่าๆ
+    confidence: 0.95
+
+  EC2_EIP_UNASSOCIATED:
+    enabled: true
+    hours_idle_7d_gt: 24      # เช็กจากฟิลด์ ec2_eip_costs.hours_idle มีการว่างงานเกิน 24 ชม
+    recommendation: "release"
+    confidence: 0.95
+
+  EC2_EBS_UNATTACHED:
+    enabled: true
+    volume_state: "available" # สถานะ EBS (ec2_ebs_volumes) ไม่ได้เกาะกับเครื่องไหนเลย
+    recommendation: "delete"
+    confidence: 0.95
+
+  EC2_EBS_SNAPSHOT_OLD:
+    enabled: true
+    age_days_gt: 90           # เช็กฟิลด์ age_days ใน ec2_ebs_snapshots (3 เดือน = เหมาะสม)
+    recommendation: "delete"
+    confidence: 0.90
+
+  # ---------- S3 ----------
+  S3_LIFECYCLE_COLD:
+    enabled: true
+    get_requests_30d_eq: 0        # เช็กจากฟิลด์ s3_metrics.get_requests ว่าไม่มีคนดูไฟล์เลยตลอด 30 วัน
+    bytes_downloaded_30d_eq: 0    # ไม่มีแบนด์วิดท์ฝั่งขารับออก (bytes_downloaded) 
+    bucket_size_bytes_gt: 104857600 # สนใจแจ้งเตือนแค่ Bucket ที่ใหญ่กว่า 100MB
+    recommendation: "migrate_to_infrequent_access_or_glacier"
+    confidence: 0.90
+
+  S3_ARCHIVE_PATTERN:
+    enabled: true
+    put_requests_14d_gt: 50       # มีการอัปโหลดไฟล์ (put_requests) เข้ามาจำนวนมากในรอบ 14 วัน
+    get_requests_14d_eq: 0        # แต่ไม่เคยกดโหลดไฟล์อ่านเลย (get_requests = 0)
+    recommendation: "direct_write_to_glacier" # แนะนำให้เปลี่ยน Default Storage Class เป็น Glacier จะประหยัดมหาศาล
+    confidence: 0.85
+
+  S3_HUGE_ABANDONED:
+    enabled: true
+    bucket_size_bytes_gt: 10737418240 # เช็กความจุเกิน 10GB 
+    put_requests_30d_eq: 0        # ถูกทิ้งร้างไม่มีการอัปโหลดเพิ่ม 30 วัน
+    get_requests_30d_eq: 0        # ถูกทิ้งร้างไม่มีการอ่าน 30 วัน
+    recommendation: "review_and_delete" # แจ้งให้ตรวจสอบและลบทิ้งเผื่อหมดความจำเป็น
+    confidence: 0.95
+
+  S3_EMPTY_BUCKET:
+    enabled: true
+    bucket_size_bytes_eq: 0       # ขนาดข้อมูล = 0
+    number_of_objects_eq: 0       # จำนวนไฟล์ = 0 (ไม่ได้ใช้งานอะไรเลย)
+    recommendation: "delete_bucket"
+    confidence: 0.95
+
+  # ---------- RDS ----------
+  RDS_RIGHTSIZE_CPU_LOW:
+    enabled: true
+    cpu_utilization_7d_lt: 20      # เช็กฟิลด์ rds_metrics.cpu_utilization ย้อนหลัง 7 วันวิ่งไม่ถึง 20%
+    recommendation: "downsize"     # แนะนำให้ลดสเปคเครื่องลงมา 1 ระดับ
+    confidence: 0.85
+
+  RDS_IDLE_STOP:
+    enabled: true
+    db_connections_7d_lt: 5        # เช็กฟิลด์ database_connections ว่าแทบไม่มีการเชื่อมต่อเลยตลอดสัปดาห์
+    cpu_utilization_7d_lt: 5       # CPU นิ่งสนิท 
+    recommendation: "stop_instance" # แนะนำให้ปิด (Stop) เครื่องทิ้งไว้จนกว่าจะใช้เพื่อเซฟค่ารันรายชั่วโมง
+    confidence: 0.95
+
+  RDS_HIGH_SNAPSHOT_COST:
+    enabled: true
+    snapshot_storage_gb_gt: 100    # ดูที่ฟิลด์ rds_metrics.snapshot_storage_gb ว่าเกิน 100GB หรือไม่
+    recommendation: "review_and_delete_old_snapshots" # แจ้งให้ไปไล่เคลียร์ Manual Snapshot เก่าๆ ทิ้ง
+    confidence: 0.80
+
+  RDS_MEMORY_BOTTLENECK:
+    enabled: true
+    swap_usage_bytes_gt: 536870912 # ฟิลด์ swap_usage เกิน 512MB (แปลว่า RAM ในเครื่องไม่พอจนล้นลงดิสก์)
+    freeable_memory_lt: 268435456  # ฟิลด์ freeable_memory (RAM ว่าง) เหลือน้อยกว่า 256MB
+    recommendation: "upsize_or_tune_queries" # แจ้งให้รีบขยายเครื่อง (Upsize) หรือไปจูนคิวรีให้ใช้แรมน้อยลงกัน DB ค้าง
+    confidence: 0.85
+
+  # ---------- Lambda ----------
+  LAMBDA_OPTIMIZE_DURATION:
+    enabled: true
+    duration_p95_ms_gt: 3000  # p95 เกิน 3 วิ = เริ่มน่ากังวล (ใกล้ default timeout)
+    invocations_14d_gt: 10000 # ถูกเรียกบ่อย (เกินหมื่นครั้ง) ใน 14 วัน (ปรับโค้ดนิดเดียวเซฟเงินมหาศาล)
+    recommendation: "optimize_code"
+    confidence: 0.85
+
+  LAMBDA_HIGH_ERROR_WASTE:
+    enabled: true
+    errors_7d_gt: 100         # มี Error เกิดขึ้นรัวๆ เกิน 100 ครั้งใน 7 วัน (เช็กจาก lambda_metrics.errors)
+    recommendation: "fix_errors" # แจ้งเตือนด่วน เพราะชาร์จเงินไปแล้วแต่โค้ดพังทำงานไม่สำเร็จ 
+    confidence: 0.90
+
+  LAMBDA_UNUSED_CLEANUP:
+    enabled: true
+    invocations_30d_eq: 0     # ไม่มีการเรียกใช้งานเลยตลอด 30 วัน (เช็กจาก invocations = 0)
+    recommendation: "delete_function" # แนะนำให้ลบเพื่อจัดระเบียบระบบ
+    confidence: 0.95
+
+  # ---------- Data Transfer ----------
+  DT_CROSS_AZ_WASTE:
+    enabled: true
+    network_cross_az_gb_30d_gt: 100 # มีทราฟฟิกชิ่งข้าม AZ เยอะเกิน 100GB ใน 30 วัน (เช็กจากยอด EC2 network_cross_az_gb)
+    recommendation: "consolidate_az_or_vpc_endpoints" # แนะนำให้เอาเซิร์ฟเวอร์มาอยู่ AZ เดียวกันหรือตรวจสอบเพื่ออุดรอยรั่ว
+    confidence: 0.85
+
+  DT_HIGH_INTERNET_EGRESS:
+    enabled: true
+    network_egress_gb_30d_gt: 100   # เตือนตั้งแต่ 100GB/เดือน (~$9 ขึ้นไป) เพื่อให้เตือนได้ทันก่อนบิลบาน
+    recommendation: "review_cdn_or_caching" # แนะนำให้ใช้งาน CloudFront/CDN เข้ามาครอบเพื่อทำแคชชิ่ง ลดค่าแบนด์วิดท์มหาศาล
+    confidence: 0.80
+
+  # ---------- Load Balancer (ALB) ----------
+  ALB_IDLE_DELETE:
+    enabled: true
+    request_count_7d_lt: 1000    # ALB ที่มี Request น้อยกว่า 1,000 ครั้งใน 7 วัน = แทบไม่มีคนใช้
+    active_conn_count_7d_lt: 50  # Active Connection น้อยกว่า 50 รวม 7 วัน
+    recommendation: "delete"     # แนะนำให้ลบเพื่อประหยัดค่าใช้จ่ายรายชั่วโมง
+    confidence: 0.95
+
+  ALB_HIGH_5XX_ERRORS:
+    enabled: true
+    http_5xx_count_7d_gt: 100    # เช็กฟิลด์ alb_metrics.http_5xx_count รีบเตือนเมื่อฝั่ง Target Group ล่มรัวๆ
+    recommendation: "fix_target_group_errors" # แจ้งให้รีบซ่อมเซิร์ฟเวอร์หลังบ้าน
+    confidence: 0.90
+
+  CLB_MIGRATE_TO_ALB:
+    enabled: true
+    lb_type: "CLB"               # ค่าที่เก็บจริงในฐานข้อมูล alb_resources.alb_type
+    recommendation: "migrate"    # แนะนำให้เปลี่ยนมาใช้ ALB หรือ NLB เพื่อลดค่าใช้จ่าย
+    confidence: 0.90

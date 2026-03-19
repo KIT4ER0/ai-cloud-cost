@@ -65,7 +65,7 @@ export const api = {
     costs: () => request.post("/sync/cost"),
     metrics: () => request.post("/sync/metrics"),
   },
-  forecast: {
+forecast: {
     // Get available services and metrics
     getMetrics: () => request.get("/forecast/metrics"),
     // Get all resources per service for forecast selection
@@ -89,5 +89,9 @@ export const api = {
     getRuns: () => request.get("/forecast/runs"),
     // Get specific forecast run with values
     getRunById: (runId: number) => request.get(`/forecast/runs/${runId}`),
+  },
+  recommendations: {
+    list: () => request.get("/api/recommendations"),
+    generate: () => request.post("/api/recommendations/generate"),
   },
 };
