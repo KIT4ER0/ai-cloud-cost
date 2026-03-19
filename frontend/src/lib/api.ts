@@ -65,4 +65,8 @@ export const api = {
     costs: () => request.post("/sync/cost"),
     metrics: () => request.post("/sync/metrics"),
   },
+  recommendations: {
+    list: () => request.get("/api/recommendations"),
+    generate: () => request.post("/api/recommendations/generate"),
+  },
 };
