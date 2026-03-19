@@ -37,7 +37,7 @@ def mock_smart_sync_lambda_metrics(db, account_id: str, region: str, profile_id:
     """
     Mock function that simulates smart_sync_lambda_metrics.
     Upserts multiple fake LambdaResources, LambdaMetrics, and LambdaCosts
-    into the database over the past 90 days with randomized realistic values.
+    into the database over the past 180 days with randomized realistic values.
     """
     from .. import models
 
@@ -87,18 +87,37 @@ def mock_smart_sync_lambda_metrics(db, account_id: str, region: str, profile_id:
                 db.add(resource)
                 db.flush()
 
-            # 2. Upsert LambdaMetrics + LambdaCosts for the past 90 days
+            # 2. Upsert LambdaMetrics + LambdaCosts for the past 180 days
             metric_rows = []
             cost_rows = []
 
-            for days_ago in reversed(range(90)):
+            for days_ago in reversed(range(180)):
                 dt = (datetime.now(timezone.utc) - timedelta(days=days_ago)).date()
                 dt_iso = dt.isoformat()
 
-                invocations = random.randint(1_000, 500_000)
-                errors = random.randint(0, int(invocations * 0.05))  # up to 5% error rate
-                avg_duration_ms = random.uniform(50, 5000)
-                duration_p95 = avg_duration_ms * random.uniform(1.2, 3.0)
+                # More realistic Lambda usage patterns
+                base_invocations = random.randint(5000, 50000)
+                
+                # Apply daily/weekly patterns
+                if dt.weekday() >= 5:  # Weekend
+                    invocations = int(base_invocations * random.uniform(0.2, 0.5))
+                else:  # Weekday
+                    invocations = int(base_invocations * random.uniform(0.8, 1.3))
+                
+                # More realistic error rate (0.1% to 2%)
+                error_rate = random.uniform(0.001, 0.02)
+                errors = int(invocations * error_rate)
+                
+                # Realistic duration based on function type
+                if "api" in fn["name"]:
+                    avg_duration_ms = random.uniform(100, 800)  # API functions faster
+                elif "batch" in fn["name"]:
+                    avg_duration_ms = random.uniform(2000, 8000)  # Batch functions slower
+                else:
+                    avg_duration_ms = random.uniform(200, 3000)  # General functions
+                
+                # P95 is typically 1.2-2.0x average (reduced from 1.2-3.0)
+                duration_p95 = avg_duration_ms * random.uniform(1.2, 2.0)
 
                 metric_rows.append({
                     "lambda_resource_id": resource.lambda_resource_id,

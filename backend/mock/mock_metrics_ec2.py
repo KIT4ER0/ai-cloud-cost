@@ -1,5 +1,6 @@
 import logging
 import random
+import numpy as np
 from datetime import datetime, timezone, timedelta
 from sqlalchemy.dialects.postgresql import insert
 
@@ -105,12 +106,59 @@ MOCK_INSTANCES = [
 def _simulate_cpu(
     base: float, range_: float, date, usage_pattern: str
 ) -> tuple[float, float, float]:
-    is_weekend = date.weekday() >= 5
-    if usage_pattern == "business_hours" and is_weekend:
-        base = base * 0.1
-    cpu_avg = round(random.uniform(base, base + range_ * 0.5), 2)
-    cpu_max = round(min(cpu_avg + random.uniform(range_ * 0.3, range_), 99.0), 2)
-    cpu_p99 = round(min(cpu_avg + random.uniform(range_ * 0.2, range_ * 0.7), 99.0), 2)
+    """
+    Simulate realistic CPU patterns with gradual changes and less extreme values.
+    
+    Changes:
+    - More gradual variations (smaller random ranges)
+    - Time-based patterns (business hours, weekends)
+    - Realistic relationships between avg/max/p99
+    """
+    # Handle both date and datetime objects
+    from datetime import datetime, timezone
+    if hasattr(date, 'hour'):  # datetime object
+        dt = date
+    else:  # date object - convert to datetime at noon
+        dt = datetime.combine(date, datetime.min.time()).replace(tzinfo=timezone.utc)
+    
+    is_weekend = dt.weekday() >= 5
+    hour_factor = 1.0
+    
+    # Business hours pattern
+    if usage_pattern == "business_hours":
+        if is_weekend:
+            base = base * 0.1  # Very low on weekends
+            hour_factor = 0.05
+        elif dt.weekday() < 5:  # Weekdays
+            # Simulate business hours (9am-6pm peak)
+            hour_factor = 1.2 if dt.hour >= 9 and dt.hour <= 18 else 0.6
+    
+    # 24x7 pattern with smaller variations
+    elif usage_pattern == "24x7":
+        if is_weekend:
+            hour_factor = 0.8  # Slightly lower on weekends
+        # Add daily pattern for 24x7
+        hour_factor *= 1.0 + 0.2 * np.sin(2 * np.pi * dt.hour / 24)  # Daily cycle
+    
+    # Apply base adjustment
+    adjusted_base = base * hour_factor
+    
+    # More realistic variations - smaller ranges
+    variation_factor = 0.3  # Reduced from 0.5 to 0.3 for less extreme variations
+    cpu_avg = round(adjusted_base + random.uniform(-range_ * variation_factor, range_ * variation_factor), 2)
+    cpu_avg = max(0.1, min(cpu_avg, 99.0))  # Clamp to realistic range
+    
+    # More realistic max and p99 values
+    max_factor = random.uniform(1.1, 1.3)  # Reduced from 1.3-1.6 to 1.1-1.3
+    p99_factor = random.uniform(1.05, 1.2)  # Reduced from 1.2-1.7 to 1.05-1.2
+    
+    cpu_max = round(min(cpu_avg * max_factor, 99.0), 2)
+    cpu_p99 = round(min(cpu_avg * p99_factor, 99.0), 2)
+    
+    # Ensure logical relationship: avg <= p99 <= max
+    cpu_p99 = max(cpu_avg, cpu_p99)
+    cpu_max = max(cpu_p99, cpu_max)
+    
     return cpu_avg, cpu_max, cpu_p99
 
 
@@ -344,9 +392,9 @@ def mock_smart_sync_ec2_metrics(
                 eip_record.is_idle = eip_data["is_idle"]
                 db.flush()
 
-        # ── 5. Upsert EC2Metrics (90 วัน) ───────────────────────────────────
+        # ── 5. Upsert EC2Metrics (180 วัน) ───────────────────────────────────
         metric_rows = []
-        for days_ago in range(90):
+        for days_ago in range(180):
             dt = (datetime.now(timezone.utc) - timedelta(days=days_ago)).date()
             cpu_avg, cpu_max, cpu_p99 = _simulate_cpu(
                 inst["cpu_base"], inst["cpu_range"], dt, inst["usage_pattern"]
@@ -357,14 +405,14 @@ def mock_smart_sync_ec2_metrics(
             metric_rows.append({
                 "ec2_resource_id": resource.ec2_resource_id,
                 "metric_date": dt.isoformat(),
-                "cpu_utilization": cpu_avg,
-                "cpu_max": cpu_max,
-                "cpu_p99": cpu_p99,
+                "cpu_utilization": float(cpu_avg),
+                "cpu_max": float(cpu_max),
+                "cpu_p99": float(cpu_p99),
                 "network_in": round(random.uniform(0.1, 2.0), 4) if is_active else 0,
                 "network_out": round(random.uniform(0.5, 5.0), 4) if is_active else 0,
                 "network_egress_gb": round(inst["egress_gb_per_day"] * random.uniform(0.7, 1.3), 4) if is_active else 0,
                 "network_cross_az_gb": round(inst["cross_az_gb_per_day"] * random.uniform(0.5, 1.5), 4) if is_active else 0,
-                "hours_running": hours,
+                "hours_running": float(hours),
             })
 
         if metric_rows:
@@ -384,7 +432,7 @@ def mock_smart_sync_ec2_metrics(
             )
             db.execute(stmt)
 
-        # ── 6. Upsert EC2Costs (90 วัน) ─────────────────────────────────────
+        # ── 6. Upsert EC2Costs (180 วัน) ─────────────────────────────────────
         cost_rows = _build_cost_rows(resource.ec2_resource_id, inst)
         if cost_rows:
             stmt = insert(models.EC2Cost).values(cost_rows)

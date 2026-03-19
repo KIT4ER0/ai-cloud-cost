@@ -65,4 +65,29 @@ export const api = {
     costs: () => request.post("/sync/cost"),
     metrics: () => request.post("/sync/metrics"),
   },
+  forecast: {
+    // Get available services and metrics
+    getMetrics: () => request.get("/forecast/metrics"),
+    // Get all resources per service for forecast selection
+    getResources: () => request.get("/forecast/resources"),
+    // Get saved forecast results (with costs) for a resource from DB
+    getResults: (service: string, resourceId: number) =>
+      request.get(`/forecast/results/${service}/${resourceId}`),
+    // Run ensemble forecast with cost calculation
+    runEnsemble: (data: {
+      resource_id: number;
+      service: string;
+      metric?: string;
+      horizon?: number;
+    }) => request.post("/forecast/ensemble", data),
+    // Run ensemble forecast for multiple resources at once
+    runMultiEnsemble: (data: {
+      resources: Array<{ service: string; resource_id: number }>;
+      horizon?: number;
+    }) => request.post("/forecast/multi-ensemble", data),
+    // Get forecast runs history
+    getRuns: () => request.get("/forecast/runs"),
+    // Get specific forecast run with values
+    getRunById: (runId: number) => request.get(`/forecast/runs/${runId}`),
+  },
 };

@@ -116,25 +116,34 @@ def mock_smart_sync_rds_metrics(db, account_id: str, region: str, profile_id: in
             metric_rows = []
             cost_rows = []
 
-            for day_offset in range(90):
+            for day_offset in range(180):
                 metric_date = (datetime.now(timezone.utc) - timedelta(days=day_offset)).date()
                 dt_iso = metric_date.isoformat()
 
                 if scenario == "idle":
-                    cpu = round(random.uniform(0.5, 5.0), 2)
-                    connections = random.randint(0, 5)
-                    read_iops = round(random.uniform(0, 10), 2)
-                    write_iops = round(random.uniform(0, 5), 2)
+                    # Idle database with very low, consistent values
+                    base_cpu = random.uniform(0.5, 2.0)
+                    cpu = round(base_cpu + random.uniform(-0.2, 0.2), 2)
+                    cpu = max(0.1, min(cpu, 5.0))
+                    connections = random.randint(0, 3)
+                    read_iops = round(random.uniform(0, 5), 2)
+                    write_iops = round(random.uniform(0, 2), 2)
                 elif scenario == "over_provisioned":
-                    cpu = round(random.uniform(5.0, 20.0), 2)
-                    connections = random.randint(5, 30)
-                    read_iops = round(random.uniform(10, 100), 2)
-                    write_iops = round(random.uniform(5, 50), 2)
+                    # Over-provisioned with moderate but consistent usage
+                    base_cpu = random.uniform(8.0, 15.0)
+                    cpu = round(base_cpu + random.uniform(-2.0, 2.0), 2)
+                    cpu = max(5.0, min(cpu, 25.0))
+                    connections = random.randint(10, 25)
+                    read_iops = round(random.uniform(20, 60), 2)
+                    write_iops = round(random.uniform(10, 30), 2)
                 else:
-                    cpu = round(random.uniform(40.0, 80.0), 2)
-                    connections = random.randint(50, 200)
-                    read_iops = round(random.uniform(200, 1000), 2)
-                    write_iops = round(random.uniform(100, 500), 2)
+                    # Production usage with realistic patterns
+                    base_cpu = random.uniform(35.0, 60.0)
+                    cpu = round(base_cpu + random.uniform(-5.0, 5.0), 2)
+                    cpu = max(25.0, min(cpu, 75.0))
+                    connections = random.randint(40, 120)
+                    read_iops = round(random.uniform(150, 400), 2)
+                    write_iops = round(random.uniform(80, 200), 2)
 
                 allocated_bytes = resource.allocated_gb * 1024**3 if resource.allocated_gb else 500 * 1024**3
                 used_ratio = random.uniform(0.1, 0.6)

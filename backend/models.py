@@ -545,6 +545,8 @@ class EC2ForecastResult(Base):
     mae = Column(Float)
     rmse = Column(Float)
     mape = Column(Float)
+    forecast_costs = Column(ARRAY(Float))  # Total daily costs
+    cost_breakdown = Column(JSONB)  # Detailed cost breakdown by type
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
 
 
@@ -564,6 +566,8 @@ class RDSForecastResult(Base):
     mae = Column(Float)
     rmse = Column(Float)
     mape = Column(Float)
+    forecast_costs = Column(ARRAY(Float))  # Total daily costs
+    cost_breakdown = Column(JSONB)  # Detailed cost breakdown by type
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
 
 
@@ -583,6 +587,8 @@ class LambdaForecastResult(Base):
     mae = Column(Float)
     rmse = Column(Float)
     mape = Column(Float)
+    forecast_costs = Column(ARRAY(Float))  # Total daily costs
+    cost_breakdown = Column(JSONB)  # Detailed cost breakdown by type
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
 
 
@@ -602,6 +608,8 @@ class S3ForecastResult(Base):
     mae = Column(Float)
     rmse = Column(Float)
     mape = Column(Float)
+    forecast_costs = Column(ARRAY(Float))  # Total daily costs
+    cost_breakdown = Column(JSONB)  # Detailed cost breakdown by type
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
 
 
@@ -621,4 +629,6 @@ class ALBForecastResult(Base):
     mae = Column(Float)
     rmse = Column(Float)
     mape = Column(Float)
+    forecast_costs = Column(ARRAY(Float))  # Total daily costs
+    cost_breakdown = Column(JSONB)  # Detailed cost breakdown by type
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)

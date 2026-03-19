@@ -157,7 +157,7 @@ def mock_smart_sync_alb_metrics(db, account_id: str, region: str, profile_id: in
             record.alb_arn = lb_arn
             db.flush()
 
-        # ── 2. Upsert LB Costs (90 วัน) ─────────────────────────────────────
+        # ── 2. Upsert LB Costs (180 วัน) ─────────────────────────────────────
         cost_rows = _build_lb_cost_rows(record.alb_resource_id, lb_tmpl)
         if cost_rows:
             stmt = insert(models.ALBCost).values(cost_rows)
@@ -170,33 +170,51 @@ def mock_smart_sync_alb_metrics(db, account_id: str, region: str, profile_id: in
         # ── 3. Mock Metrics ────────────────────────────────────────────────
         # (Optional but good for monitoring page)
         metric_rows = []
-        for days_ago in range(90):
+        for days_ago in range(180):
             dt = (datetime.now(timezone.utc) - timedelta(days=days_ago)).date()
             is_weekend = dt.weekday() >= 5
             
+            # More realistic ALB patterns
             if lb_type == "ALB":
-                req_base = 50000 if not is_weekend else 10000
+                # Base request count with realistic ranges
                 if lb_tmpl['lb_name'] == "alb-idle":
-                    req_base = 100
+                    req_base = random.randint(50, 200)  # Idle ALB
+                elif lb_tmpl['lb_name'] == "alb-web":
+                    req_base = random.randint(2000, 8000)  # Web ALB
+                else:
+                    req_base = random.randint(1000, 5000)  # Standard ALB
+                
+                # Apply weekend patterns
+                if is_weekend:
+                    req_base = int(req_base * random.uniform(0.2, 0.4))  # Much less on weekends
+                else:
+                    req_base = int(req_base * random.uniform(0.8, 1.3))  # Daily variation
                 
                 metric_rows.append({
                     "alb_resource_id": record.alb_resource_id,
                     "metric_date": dt,
-                    "request_count": int(req_base * random.uniform(0.8, 1.2)),
-                    "processed_bytes": int(req_base * random.uniform(1024, 10240)),  # 1-10 KB per request
-                    "new_conn_count": int(req_base * random.uniform(0.01, 0.05)),   # 1-5% new connections
-                    "response_time_p95": random.uniform(0.05, 0.15),
-                    "http_5xx_count": random.randint(0, 5),
-                    "active_conn_count": random.randint(10, 50),
+                    "request_count": req_base,
+                    "processed_bytes": int(req_base * random.uniform(1024, 4096)),  # 1-4KB per request
+                    "new_conn_count": int(req_base * random.uniform(0.01, 0.03)),   # 1-3% new connections
+                    "response_time_p95": random.uniform(0.02, 0.08),  # More realistic response times
+                    "http_5xx_count": random.randint(0, 2),  # Fewer errors
+                    "active_conn_count": random.randint(5, 25),  # Moderate connection count
                 })
             elif lb_type == "NLB":
+                # NLB typically handles higher throughput with more consistent patterns
+                base_requests = random.randint(50000, 150000)
+                if is_weekend:
+                    base_requests = int(base_requests * random.uniform(0.4, 0.6))  # Less on weekends
+                else:
+                    base_requests = int(base_requests * random.uniform(0.9, 1.1))  # Small daily variation
+                
                 metric_rows.append({
                     "alb_resource_id": record.alb_resource_id,
                     "metric_date": dt,
-                    "request_count": int(200000 * random.uniform(0.9, 1.1)),
-                    "processed_bytes": int(200000 * random.uniform(2048, 20480)),
-                    "new_conn_count": random.randint(1000, 5000),
-                    "active_conn_count": random.randint(100, 300),
+                    "request_count": base_requests,
+                    "processed_bytes": int(base_requests * random.uniform(1024, 2048)),  # 1-2KB per request
+                    "new_conn_count": random.randint(500, 2000),  # More realistic connection ranges
+                    "active_conn_count": random.randint(50, 150),  # Moderate active connections
                 })
 
         if metric_rows:

@@ -324,6 +324,12 @@ class XGBoostMetricResult(BaseModel):
     backtest_preds: Optional[List[float]] = None
     fallback: bool = False
     performance_metrics: Optional[XGBoostPerformanceMetrics] = None
+    # Cost fields
+    forecast_costs: Optional[List[float]] = None
+    total_forecast_cost: Optional[float] = None
+    avg_daily_cost: Optional[float] = None
+    cost_breakdown: Optional[Dict[str, List[float]]] = None
+    cost_breakdown_totals: Optional[Dict[str, float]] = None
 
 
 # Ensemble Forecast
@@ -338,3 +344,26 @@ class EnsembleForecastResponse(BaseModel):
     service: str
     resource_id: int
     results: List[XGBoostMetricResult]
+
+
+# Multi-resource Ensemble Forecast
+class MultiResourceItem(BaseModel):
+    service: str
+    resource_id: int
+
+class MultiEnsembleForecastRequest(BaseModel):
+    resources: List[MultiResourceItem]
+    horizon: int = 30
+
+class MultiEnsembleForecastResult(BaseModel):
+    service: str
+    resource_id: int
+    resource_name: Optional[str] = None
+    results: List[XGBoostMetricResult]
+    error: Optional[str] = None
+
+class MultiEnsembleForecastResponse(BaseModel):
+    total_resources: int
+    successful: int
+    failed: int
+    forecasts: List[MultiEnsembleForecastResult]

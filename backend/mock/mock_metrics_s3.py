@@ -28,7 +28,7 @@ def mock_smart_sync_s3_metrics(db, account_id: str, region: str, profile_id: int
     """
     Mock function that simulates smart_sync_s3_metrics.
     Upserts multiple fake S3Resources, S3Metrics, and S3Costs into the database
-    over the past 90 days with randomized realistic values.
+    over the past 180 days with randomized realistic values.
     """
     from .. import models
 
@@ -64,23 +64,44 @@ def mock_smart_sync_s3_metrics(db, account_id: str, region: str, profile_id: int
                 db.add(resource)
                 db.flush()
 
-            # 2. Upsert S3Metrics + S3Costs for the past 90 days
+            # 2. Upsert S3Metrics + S3Costs for the past 180 days
             metric_rows = []
             cost_rows = []
 
-            current_size = random.randint(10_000_000, 500_000_000)
-            current_objects = random.randint(100, 5000)
+            # Initialize with realistic starting values
+            current_size = random.randint(50_000_000, 200_000_000)  # 50-200MB start
+            current_objects = random.randint(500, 2000)
 
-            for days_ago in reversed(range(90)):
+            for days_ago in reversed(range(180)):
                 dt = (datetime.now(timezone.utc) - timedelta(days=days_ago)).date()
                 dt_iso = dt.isoformat()
 
-                current_size += random.randint(0, 50_000_000)
-                current_objects += random.randint(0, 50)
+                # More realistic gradual growth (smaller increments)
+                size_growth = random.randint(0, 10_000_000)  # 0-10MB per day
+                object_growth = random.randint(0, 20)  # 0-20 objects per day
+                
+                # Weekend patterns (less activity)
+                if dt.weekday() >= 5:
+                    size_growth = int(size_growth * 0.3)  # 70% less on weekends
+                    object_growth = int(object_growth * 0.3)
 
-                get_requests = random.randint(50, 10000)
-                put_requests = random.randint(10, 500)
-                bytes_downloaded = random.randint(100_000, 100_000_000)
+                current_size += size_growth
+                current_objects += object_growth
+
+                # More realistic request patterns with daily variations
+                base_get = random.randint(500, 2000)
+                base_put = random.randint(50, 200)
+                
+                # Apply daily/weekly patterns
+                if dt.weekday() >= 5:  # Weekend
+                    get_requests = int(base_get * random.uniform(0.3, 0.7))
+                    put_requests = int(base_put * random.uniform(0.2, 0.6))
+                else:  # Weekday
+                    get_requests = int(base_get * random.uniform(0.8, 1.5))
+                    put_requests = int(base_put * random.uniform(0.7, 1.3))
+                
+                # Realistic data transfer ranges
+                bytes_downloaded = get_requests * random.randint(1000, 50000)  # 1-50KB per request
 
                 metric_rows.append({
                     "s3_resource_id": resource.s3_resource_id,
@@ -90,9 +111,9 @@ def mock_smart_sync_s3_metrics(db, account_id: str, region: str, profile_id: int
                     "get_requests": get_requests,
                     "put_requests": put_requests,
                     "bytes_downloaded": bytes_downloaded,
-                    "bytes_uploaded": random.randint(50_000, 50_000_000),
-                    "delete_requests": random.randint(0, 50),
-                    "list_requests": random.randint(10, 200),
+                    "bytes_uploaded": put_requests * random.randint(2000, 100000),  # 2-100KB per put
+                    "delete_requests": random.randint(0, 10),  # Fewer deletes
+                    "list_requests": random.randint(20, 100),  # Moderate list operations
                 })
 
                 storage_cost = _calculate_storage_cost(current_size)

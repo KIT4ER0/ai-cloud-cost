@@ -60,7 +60,10 @@ export function ForecastChartCard({ data, isSimulating, onSimulationToggle }: Fo
             </CardHeader>
             <CardContent>
                 <ResponsiveContainer width="100%" height={350}>
-                    <ComposedChart data={data} margin={{ top: 20, right: 30, bottom: 20, left: 20 }}>
+                    <ComposedChart 
+                        data={data} 
+                        margin={{ top: 20, right: 30, bottom: 20, left: 20 }}
+                    >
                         <defs>
                             <linearGradient id="actualGradient" x1="0" y1="0" x2="0" y2="1">
                                 <stop offset="5%" stopColor="hsl(270, 91%, 29%)" stopOpacity={0.15} />

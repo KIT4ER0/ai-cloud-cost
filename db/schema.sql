@@ -444,6 +444,8 @@ CREATE TABLE IF NOT EXISTS ec2_forecast_results (
     mae              FLOAT,
     rmse             FLOAT,
     mape             FLOAT,
+    forecast_costs   FLOAT8[],                     -- Array of total daily forecasted costs in USD
+    cost_breakdown   JSONB,                        -- JSON breakdown of costs by type (compute, ebs, network, etc.)
     created_at      TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
@@ -460,6 +462,8 @@ CREATE TABLE IF NOT EXISTS rds_forecast_results (
     mae              FLOAT,
     rmse             FLOAT,
     mape             FLOAT,
+    forecast_costs   FLOAT8[],                     -- Array of total daily forecasted costs in USD
+    cost_breakdown   JSONB,                        -- JSON breakdown of costs by type (compute, storage, etc.)
     created_at      TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
@@ -476,6 +480,8 @@ CREATE TABLE IF NOT EXISTS lambda_forecast_results (
     mae              FLOAT,
     rmse             FLOAT,
     mape             FLOAT,
+    forecast_costs   FLOAT8[],                     -- Array of total daily forecasted costs in USD
+    cost_breakdown   JSONB,                        -- JSON breakdown of costs by type (requests, duration, etc.)
     created_at      TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
@@ -492,6 +498,8 @@ CREATE TABLE IF NOT EXISTS s3_forecast_results (
     mae              FLOAT,
     rmse             FLOAT,
     mape             FLOAT,
+    forecast_costs   FLOAT8[],                     -- Array of total daily forecasted costs in USD
+    cost_breakdown   JSONB,                        -- JSON breakdown of costs by type (storage, requests, etc.)
     created_at      TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
@@ -508,6 +516,8 @@ CREATE TABLE IF NOT EXISTS alb_forecast_results (
     mae              FLOAT,
     rmse             FLOAT,
     mape             FLOAT,
+    forecast_costs   FLOAT8[],                     -- Array of total daily forecasted costs in USD
+    cost_breakdown   JSONB,                        -- JSON breakdown of costs by type (hourly, lcu, etc.)
     created_at      TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 

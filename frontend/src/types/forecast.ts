@@ -68,6 +68,103 @@ export interface ForecastSummary {
     changeFromBaseline: number
 }
 
+// API Response Types
+export interface ForecastMetricResult {
+    metric: string
+    method: string
+    forecast_dates: string[]
+    forecast_values: number[]
+    backtest_dates?: string[]
+    backtest_actuals?: number[]
+    backtest_preds?: number[]
+    fallback?: boolean
+    performance_metrics?: {
+        mae?: number
+        rmse?: number
+        mape?: number
+    }
+    // Cost fields
+    forecast_costs?: number[]
+    total_forecast_cost?: number
+    avg_daily_cost?: number
+    cost_breakdown?: {
+        [costType: string]: number[]
+    }
+    cost_breakdown_totals?: {
+        [costType: string]: number
+    }
+    created_at?: string
+}
+
+export interface EnsembleForecastResponse {
+    service: string
+    resource_id: number
+    results: ForecastMetricResult[]
+}
+
+export interface ForecastMetricsResponse {
+    services: {
+        [serviceName: string]: {
+            metrics: string[]
+            resources: Array<{
+                id: number
+                name?: string
+                type?: string
+            }>
+        }
+    }
+}
+
+export interface ForecastRun {
+    run_id: number
+    service: string
+    resource_id: number
+    metric?: string
+    method: string
+    horizon: number
+    train_size?: number
+    mae?: number
+    rmse?: number
+    mape?: number
+    created_at: string
+    params?: any
+}
+
+// Enhanced forecast types with cost data
+export interface CostBreakdown {
+    compute?: number[]
+    storage?: number[]
+    network?: number[]
+    requests?: number[]
+    duration?: number[]
+    ebs?: number[]
+    public_ip?: number[]
+    hourly?: number[]
+    lcu?: number[]
+    [key: string]: number[] | undefined
+}
+
+export interface ForecastDataPointWithCost extends ForecastDataPoint {
+    cost?: number
+    costBreakdown?: CostBreakdown
+}
+
+// Multi-resource forecast types
+export interface MultiEnsembleForecastResult {
+    service: string
+    resource_id: number
+    resource_name?: string
+    results: ForecastMetricResult[]
+    error?: string
+}
+
+export interface MultiEnsembleForecastResponse {
+    total_resources: number
+    successful: number
+    failed: number
+    forecasts: MultiEnsembleForecastResult[]
+}
+
 // Default settings
 export function getDefaultSettings(): ForecastSettings {
     return {
