@@ -71,32 +71,42 @@ NETWORK_CROSS_AZ_PRICE_PER_GB = 0.01  # $/GB
 PUBLIC_IPV4_PRICE_PER_HR = 0.005  # $/hour
 EBS_SNAPSHOT_PRICE_PER_GB = 0.053  # $/GB/month
 
-# RDS Instance Pricing ($/hour) - PostgreSQL
+# RDS Instance Pricing ($/hour) - PostgreSQL/MySQL/MariaDB (ap-southeast-1/us-east-1 approximate)
 RDS_INSTANCE_PRICING = {
-    "db.t3.micro": 0.018,
-    "db.t3.small": 0.036,
-    "db.t3.medium": 0.073,
-    "db.t3.large": 0.146,
-    "db.t3.xlarge": 0.292,
-    "db.t3.2xlarge": 0.584,
+    "db.t3.micro": 0.017,
+    "db.t3.small": 0.034,
+    "db.t3.medium": 0.068,
+    "db.t3.large": 0.136,
+    "db.t3.xlarge": 0.272,
+    "db.t3.2xlarge": 0.544,
     "db.t4g.micro": 0.016,
     "db.t4g.small": 0.032,
-    "db.t4g.medium": 0.065,
-    "db.t4g.large": 0.130,
-    "db.m5.large": 0.192,
-    "db.m5.xlarge": 0.384,
-    "db.m5.2xlarge": 0.768,
-    "db.r5.large": 0.280,
-    "db.r5.xlarge": 0.560,
-    "db.r5.2xlarge": 1.120,
+    "db.t4g.medium": 0.064,
+    "db.t4g.large": 0.128,
+    "db.m5.large": 0.182,
+    "db.m5.xlarge": 0.364,
+    "db.m5.2xlarge": 0.728,
+    "db.r5.large": 0.240,
+    "db.r5.xlarge": 0.480,
+    "db.r5.2xlarge": 0.960,
+    "db.r6g.large": 0.200,
+    "db.r6g.xlarge": 0.400,
+    "db.r6g.2xlarge": 0.800,
+    "db.r6g.4xlarge": 1.600,
 }
 
 # RDS Storage Pricing ($/GB/month)
 RDS_STORAGE_PRICING = {
-    "gp2": 0.138,
-    "gp3": 0.138,
-    "io1": 0.138,
-    "magnetic": 0.115,
+    "gp2": 0.115,
+    "gp3": 0.115,
+    "io1": 0.125,
+    "magnetic": 0.10,
+}
+
+# RDS IOPS Pricing ($/IOPS/month)
+RDS_IOPS_PRICING = {
+    "io1": 0.10,
+    "gp3": 0.008, # Above 3000 IOPS
 }
 
 # Lambda Pricing
@@ -252,41 +262,74 @@ def calculate_rds_forecast_cost(
     # Initialize cost breakdown
     compute_costs = []
     storage_costs = []
+    iops_costs = []
+    other_costs = []
     total_costs = []
     
+    # Estimate IOPS if not provided. 
+    # For io1, the minimum is 100 IOPS. 1000 was way too high for small instances.
+    # We also check actual metrics to see if we can guess provisioned IOPS.
+    max_observed_iops = 0
+    if "read_iops" in forecast_metrics or "write_iops" in forecast_metrics:
+        r_iops = forecast_metrics.get("read_iops", [0.0])
+        w_iops = forecast_metrics.get("write_iops", [0.0])
+        max_observed_iops = max(max(r_iops) + max(w_iops), 1)
+
+    # Heuristic: Provisioned is usually at least 1.5x of peak observed or 100 (min for io1)
+    default_iops = max(100 if storage_type == "io1" else 3000, int(max_observed_iops * 1.5))
+    provisioned_iops = resource_info.get("iops", default_iops)
+    
+    # Check for historical baseline for 'other' costs (backup, data transfer)
+    # Use float() to ensure JSON serializability (FastAPI doesn't like numpy.float64)
+    def safe_mean(metric_name):
+        vals = forecast_metrics.get(metric_name)
+        if not vals or len(vals) == 0:
+            return 0.0
+        m = np.mean(vals)
+        return float(m) if not np.isnan(m) else 0.0
+
+    avg_backup_gb = safe_mean("snapshot_storage_gb")
+    # data_transfer is in Bytes in the DB, convert to GB
+    avg_transfer_gb = safe_mean("data_transfer") / (1024**3)
+
     for i, forecast_date in enumerate(forecast_dates):
-        # Get utilization metrics for this day
-        cpu_util = cpu_utilization[i] if i < len(cpu_utilization) else 50.0
-        connections = database_connections[i] if i < len(database_connections) else 10.0
-        
-        # RDS instances are always running and billed per hour, regardless of connections
-        # However, we can apply a modest utilization discount for consistently low usage
-        # This represents potential savings from rightsizing or serverless options
-        
-        if cpu_util > 70:
-            utilization_factor = 1.0  # Full price for high utilization
-        elif cpu_util > 30:
-            utilization_factor = 0.95  # 5% discount for medium utilization
-        else:
-            utilization_factor = 0.90  # 10% discount for low utilization (rightsizing opportunity)
-        
-        # Compute cost with Multi-AZ and modest utilization adjustment
-        effective_hourly_price = hourly_price * multi_az_factor * utilization_factor
+        # Compute cost with Multi-AZ (1.0 utilization factor as per user request)
+        effective_hourly_price = float(hourly_price * multi_az_factor)
         compute_cost = effective_hourly_price * 24
         
         # Storage cost (daily portion of monthly cost)
-        storage_cost = (RDS_STORAGE_PRICING.get(storage_type, 0.138) * allocated_gb) / 30
+        storage_base_price = float(RDS_STORAGE_PRICING.get(storage_type, 0.115))
+        # Multi-AZ doubles storage and IOPS price for RDS
+        storage_cost = (storage_base_price * allocated_gb * multi_az_factor) / 30
+        
+        # IOPS cost
+        iops_cost = 0.0
+        if storage_type == "io1":
+            iops_price = float(RDS_IOPS_PRICING.get("io1", 0.10))
+            iops_cost = (iops_price * provisioned_iops * multi_az_factor) / 30
+        elif storage_type == "gp3" and provisioned_iops > 3000:
+            extra_iops = provisioned_iops - 3000
+            iops_cost = (float(RDS_IOPS_PRICING.get("gp3", 0.008)) * extra_iops * multi_az_factor) / 30
+            
+        # Other costs (Backup fee is approx $0.095/GB-month, Data transfer $0.09/GB)
+        backup_cost = (avg_backup_gb * 0.095) / 30
+        transfer_cost = avg_transfer_gb * 0.09
+        other_daily_cost = backup_cost + transfer_cost
         
         # Total
-        total_cost = compute_cost + storage_cost
+        total_cost = compute_cost + storage_cost + iops_cost + other_daily_cost
         
         compute_costs.append(round(compute_cost, 6))
         storage_costs.append(round(storage_cost, 6))
+        iops_costs.append(round(iops_cost, 6))
+        other_costs.append(round(other_daily_cost, 6))
         total_costs.append(round(total_cost, 6))
     
     cost_breakdown = {
         "compute": compute_costs,
         "storage": storage_costs,
+        "iops": iops_costs,
+        "other": other_costs,
     }
     
     return total_costs, cost_breakdown

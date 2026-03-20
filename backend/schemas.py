@@ -330,6 +330,9 @@ class XGBoostMetricResult(BaseModel):
     avg_daily_cost: Optional[float] = None
     cost_breakdown: Optional[Dict[str, List[float]]] = None
     cost_breakdown_totals: Optional[Dict[str, float]] = None
+    # History fields
+    history_costs: Optional[List[float]] = None
+    history_dates: Optional[List[date]] = None
 
 
 # Ensemble Forecast
@@ -338,6 +341,7 @@ class EnsembleForecastRequest(BaseModel):
     service: str
     metric: Optional[str] = None
     horizon: int = 30
+    baseline_days: Optional[int] = 90
 
 
 class EnsembleForecastResponse(BaseModel):
@@ -354,6 +358,7 @@ class MultiResourceItem(BaseModel):
 class MultiEnsembleForecastRequest(BaseModel):
     resources: List[MultiResourceItem]
     horizon: int = 30
+    baseline_days: Optional[int] = 90
 
 class MultiEnsembleForecastResult(BaseModel):
     service: str
@@ -367,3 +372,25 @@ class MultiEnsembleForecastResponse(BaseModel):
     successful: int
     failed: int
     forecasts: List[MultiEnsembleForecastResult]
+    last_month_cost: Optional[float] = None
+
+
+# =======================
+# Simulation
+# =======================
+class SimulationPreviewItem(BaseModel):
+    rec_id: int
+    service: str
+    resource_key: str
+    rec_type: str
+    est_saving_usd: float
+    confidence: float
+
+    class Config:
+        from_attributes = True
+
+
+class SimulationPreviewResponse(BaseModel):
+    total_savings_usd: float
+    items: List[SimulationPreviewItem]
+    by_service: Dict[str, float]

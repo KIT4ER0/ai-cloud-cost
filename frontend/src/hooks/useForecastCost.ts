@@ -67,6 +67,7 @@ export function useForecastCost() {
         service: string
         metric?: string
         horizon?: number
+        baseline_days?: number
     }) => {
         try {
             setIsLoading(true)
@@ -87,6 +88,7 @@ export function useForecastCost() {
     const runMultiForecast = useCallback(async (params: {
         resources: Array<{ service: string; resource_id: number }>
         horizon?: number
+        baseline_days?: number
     }) => {
         try {
             setIsLoading(true)
@@ -177,56 +179,85 @@ export function useForecastCost() {
         const avgDailyCost = primaryResult.avg_daily_cost ?? 
             (totalCost / (primaryResult.forecast_costs?.length || 1))
         
+        const totalHistoryCost = primaryResult.history_costs?.reduce((s, c) => s + c, 0) ?? 0
+        
         const costBreakdown: Record<string, number> = {}
-        resultsWithCosts.forEach(result => {
-            if (result.cost_breakdown_totals) {
-                Object.entries(result.cost_breakdown_totals).forEach(([type, amount]) => {
-                    costBreakdown[type] = (costBreakdown[type] || 0) + amount
-                })
-            }
-        })
+        // Since breakdown totals are resource-level but attached to every metric result, 
+        // we only process them for the primary metric of each resource in this context.
+        // Actually, for a single resource forecast, we just take the first one.
+        const firstWithBreakdown = resultsWithCosts[0]
+        if (firstWithBreakdown.cost_breakdown_totals) {
+            Object.entries(firstWithBreakdown.cost_breakdown_totals).forEach(([type, amount]) => {
+                costBreakdown[type] = amount
+            })
+        }
 
-        return { totalForecastCost: totalCost, avgDailyCost, costBreakdown, hasCostData: true }
+        return { 
+            totalForecastCost: totalCost, 
+            avgDailyCost, 
+            lastMonthCost: totalHistoryCost,
+            costBreakdown, 
+            hasCostData: true 
+        }
     }, [])
 
     // Transform multi-service forecast data for chart display
     const transformForMultiChart = useCallback((multiForecasts: MultiEnsembleForecastResult[]) => {
         if (!multiForecasts || multiForecasts.length === 0) return []
 
-        // Generate forecast data for all services (no historical data)
         const chartData: any[] = []
-        
-        // Get all forecast dates from the first successful forecast
-        const firstSuccessful = multiForecasts.find(f => !f.error && f.results.length > 0)
-        if (!firstSuccessful) return []
-        
-        const forecastDates = firstSuccessful.results[0]?.forecast_dates || []
-        
-        // DEBUG: Log forecast data structure
-        console.log('🔍 DEBUG transformForMultiChart:')
-        console.log('   Number of forecasts:', multiForecasts.length)
-        console.log('   Forecast dates:', forecastDates.length)
-        multiForecasts.forEach((f, idx) => {
-            console.log(`   Forecast ${idx}: service=${f.service}, error=${!!f.error}, results=${f.results.length}`)
-            if (!f.error && f.results.length > 0) {
-                f.results.forEach((r, rIdx) => {
-                    console.log(`     Result ${rIdx}: metric=${r.metric}, total_forecast_cost=${r.total_forecast_cost}, forecast_costs=${r.forecast_costs?.length}`)
-                })
+        // Get all historical dates and aggregate their costs
+        const historyDataMap: Record<string, number> = {}
+        const historyDatesSet = new Set<string>()
+
+        multiForecasts.forEach(forecast => {
+            if (!forecast.error && forecast.results.length > 0) {
+                // Assume all results for the same resource have the same history_dates
+                const result = forecast.results[0]
+                if (result.history_dates && result.history_costs) {
+                    result.history_dates.forEach((date, dateIdx) => {
+                        historyDatesSet.add(date)
+                        const cost = result.history_costs?.[dateIdx] || 0
+                        historyDataMap[date] = (historyDataMap[date] || 0) + cost
+                    })
+                }
             }
         })
+
+        // Add historical data points (sorted by date)
+        const sortedHistoryDates = Array.from(historyDatesSet).sort()
+        sortedHistoryDates.forEach(date => {
+            const cost = historyDataMap[date]
+            chartData.push({
+                date,
+                label: new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+                actual: cost,
+                baseline: undefined,
+                simulated: undefined,
+                cost: cost,
+                isProjected: false,
+            })
+        })
+
+        // Get all forecast dates from the first successful forecast
+        const firstSuccessful = multiForecasts.find(f => !f.error && f.results.length > 0)
+        if (!firstSuccessful) return chartData
+        
+        const forecastDates = firstSuccessful.results[0]?.forecast_dates || []
         
         // Add forecast data for each day
         let chartGrandTotal = 0
         forecastDates.forEach((date: string, dateIndex: number) => {
             let totalForecastCost = 0
             
-            // Sum costs from all services for this date
+            // Sum costs from all services/resources for this date
             multiForecasts.forEach(forecast => {
                 if (!forecast.error && forecast.results.length > 0) {
-                    forecast.results.forEach((result: any) => {
-                        const dayCost = result.forecast_costs?.[dateIndex] || 0
-                        totalForecastCost += dayCost
-                    })
+                    // Every metric result for a resource has the SAME resource-level daily costs.
+                    // We only take it from the first result per resource.
+                    const firstResult = forecast.results[0]
+                    const dayCost = firstResult.forecast_costs?.[dateIndex] || 0
+                    totalForecastCost += dayCost
                 }
             })
             
@@ -237,6 +268,8 @@ export function useForecastCost() {
                 label: new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
                 actual: undefined,
                 baseline: totalForecastCost, // Total forecast cost across all services
+                lower: totalForecastCost * 0.9,
+                upper: totalForecastCost * 1.1,
                 simulated: undefined,
                 cost: totalForecastCost,
                 isProjected: true,
@@ -244,10 +277,6 @@ export function useForecastCost() {
         })
         
         // DEBUG: Log chart totals
-        console.log('📊 CHART Totals:')
-        console.log('   Chart grand total:', chartGrandTotal)
-        console.log('   Chart daily averages:', chartGrandTotal / forecastDates.length)
-        
         return chartData
     }, [])
 
@@ -258,18 +287,35 @@ export function useForecastCost() {
         // Find a result that has cost data, or use the first one
         const primaryResult = results.find(r => r.forecast_costs && r.forecast_costs.length > 0) || results[0]
         
-        // Generate forecast data only (no historical data)
         const chartData: any[] = []
+        
+        // Include historical data
+        if (primaryResult.history_dates && primaryResult.history_costs) {
+            primaryResult.history_dates.forEach((date, index) => {
+                chartData.push({
+                    date,
+                    label: new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+                    actual: primaryResult.history_costs?.[index],
+                    baseline: undefined,
+                    simulated: undefined,
+                    cost: primaryResult.history_costs?.[index],
+                    isProjected: false,
+                })
+            })
+        }
         
         // Add forecast data
         primaryResult.forecast_dates.forEach((date, index) => {
+            const baseline = primaryResult.forecast_costs?.[index] || primaryResult.forecast_values[index];
             chartData.push({
                 date,
                 label: new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
                 actual: undefined,
-                baseline: primaryResult.forecast_costs?.[index] || primaryResult.forecast_values[index],
+                baseline: baseline,
+                lower: baseline * 0.9,
+                upper: baseline * 1.1,
                 simulated: undefined,
-                cost: primaryResult.forecast_costs?.[index],
+                cost: baseline,
                 isProjected: true,
             })
         })

@@ -188,10 +188,12 @@ def get_cost_analysis(
     # 5. Distribution (Pie Chart)
     # Define colors
     colors = {
-        "EC2": "#8b5cf6",
-        "RDS": "#06b6d4",
-        "S3": "#10b981",
-        "Lambda": "#f59e0b"
+        "EC2":    "#6366f1",  # indigo
+        "RDS":    "#f59e0b",  # amber
+        "S3":     "#10b981",  # emerald
+        "Lambda": "#8b5cf6",  # purple
+        "ALB":    "#ef4444",  # red
+        "EIP":    "#14b8a6",  # teal
     }
     distribution = [
         schemas.ServiceCostDistribution(

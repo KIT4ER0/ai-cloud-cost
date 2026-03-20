@@ -94,4 +94,7 @@ forecast: {
     list: () => request.get("/api/recommendations"),
     generate: () => request.post("/api/recommendations/generate"),
   },
+  simulation: {
+    preview: () => request.get("/api/simulation/preview"),
+  },
 };

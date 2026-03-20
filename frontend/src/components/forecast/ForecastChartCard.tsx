@@ -1,33 +1,23 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Switch } from '@/components/ui/switch'
-import { Label } from '@/components/ui/label'
-import { Badge } from '@/components/ui/badge'
 import {
     Line,
     XAxis,
     YAxis,
     ResponsiveContainer,
-    Tooltip,
     Legend,
-    ReferenceLine,
     Area,
     ComposedChart,
 } from 'recharts'
-import { TrendingUp, Zap } from 'lucide-react'
+import { TrendingUp } from 'lucide-react'
 import type { ForecastDataPoint } from '@/types/forecast'
 
 interface ForecastChartCardProps {
     data: ForecastDataPoint[]
-    isSimulating: boolean
-    onSimulationToggle: (value: boolean) => void
 }
 
-export function ForecastChartCard({ data, isSimulating, onSimulationToggle }: ForecastChartCardProps) {
-    // Find the transition point between actual and projected
-    const lastActualIndex = data.findIndex(d => d.isProjected) - 1
-    const transitionDate = lastActualIndex >= 0 ? data[lastActualIndex].date : null
+export function ForecastChartCard({ data }: ForecastChartCardProps) {
 
-    const formatYAxis = (value: number) => `$${(value / 1000).toFixed(0)}k`
+    const formatYAxis = (value: number) => `$${value.toFixed(0)}`
 
     return (
         <Card>
@@ -41,22 +31,7 @@ export function ForecastChartCard({ data, isSimulating, onSimulationToggle }: Fo
                         Historical trend with projected costs
                     </p>
                 </div>
-                <div className="flex items-center gap-4">
-                    <Badge variant="outline" className="text-xs">
-                        {transitionDate ? `Projection starts: Feb 2026` : ''}
-                    </Badge>
-                    <div className="flex items-center gap-2 bg-slate-50 px-3 py-2 rounded-lg border">
-                        <Zap className={`h-4 w-4 ${isSimulating ? 'text-green-500' : 'text-muted-foreground'}`} />
-                        <Label htmlFor="simulation-mode" className="text-sm font-medium cursor-pointer">
-                            Simulation Mode
-                        </Label>
-                        <Switch
-                            id="simulation-mode"
-                            checked={isSimulating}
-                            onCheckedChange={onSimulationToggle}
-                        />
-                    </div>
-                </div>
+
             </CardHeader>
             <CardContent>
                 <ResponsiveContainer width="100%" height={350}>
@@ -88,62 +63,32 @@ export function ForecastChartCard({ data, isSimulating, onSimulationToggle }: Fo
                             tickLine={false}
                             domain={['auto', 'auto']}
                         />
-                        <Tooltip
-                            formatter={(value, name) => {
-                                if (value === undefined || typeof value !== 'number') return [String(value ?? 'N/A'), String(name)]
-                                const labels: Record<string, string> = {
-                                    actual: 'Actual',
-                                    baseline: 'Baseline Forecast',
-                                    simulated: 'After Optimization',
-                                }
-                                return [`$${value.toLocaleString()}`, labels[String(name)] || String(name)]
-                            }}
-                            contentStyle={{
-                                backgroundColor: 'white',
-                                border: '1px solid #e5e7eb',
-                                borderRadius: '8px',
-                                boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
-                            }}
-                            labelStyle={{ fontWeight: 600 }}
-                        />
                         <Legend
                             wrapperStyle={{ paddingTop: 20 }}
-                            iconType="line"
+                            iconType="circle"
                             formatter={(value) => {
                                 const labels: Record<string, string> = {
-                                    actual: 'Actual History',
-                                    baseline: 'Baseline Forecast',
-                                    simulated: 'After Optimization',
+                                    actual: 'History',
+                                    baseline: 'Forecast',
+                                    simulated: 'Optimized',
                                 }
-                                return <span className="text-sm">{labels[value] || value}</span>
+                                return <span className="text-xs font-medium text-slate-600">{labels[value] || value}</span>
                             }}
                         />
 
-                        {/* Projection zone marker */}
-                        {transitionDate && (
-                            <ReferenceLine
-                                x="Jan 2026"
-                                stroke="#94a3b8"
-                                strokeDasharray="4 4"
-                                label={{
-                                    value: 'Projection',
-                                    position: 'top',
-                                    fill: '#94a3b8',
-                                    fontSize: 11,
-                                }}
-                            />
-                        )}
+                        {/* Shaded Area for History */}
+
+                        {/* Actual History - Solid line with area */}
 
                         {/* Actual History - Solid line with area */}
                         <Area
                             type="monotone"
                             dataKey="actual"
-                            stroke="hsl(270, 91%, 29%)"
-                            strokeWidth={2.5}
+                            stroke="hsl(262, 80%, 50%)"
+                            strokeWidth={3}
                             fill="url(#actualGradient)"
-                            dot={{ fill: 'hsl(270, 91%, 29%)', strokeWidth: 0, r: 4 }}
-                            activeDot={{ r: 6.5 }}
-                            connectNulls={false}
+                            dot={{ fill: 'hsl(262, 80%, 50%)', strokeWidth: 0, r: 4 }}
+                            activeDot={{ r: 6, strokeWidth: 0 }}
                             name="actual"
                         />
 
@@ -151,29 +96,15 @@ export function ForecastChartCard({ data, isSimulating, onSimulationToggle }: Fo
                         <Line
                             type="monotone"
                             dataKey="baseline"
-                            stroke="#64748b"
-                            strokeWidth={2}
+                            stroke="#475569"
+                            strokeWidth={2.5}
                             strokeDasharray="6 4"
-                            dot={{ fill: '#64748b', strokeWidth: 0, r: 3.5 }}
-                            activeDot={{ r: 5.5 }}
-                            connectNulls={false}
+                            dot={{ fill: '#475569', strokeWidth: 0, r: 3 }}
+                            activeDot={{ r: 5, strokeWidth: 0 }}
                             name="baseline"
                         />
 
-                        {/* Simulated Forecast - Green line (only when simulating) */}
-                        {isSimulating && (
-                            <Area
-                                type="monotone"
-                                dataKey="simulated"
-                                stroke="#10b981"
-                                strokeWidth={2.5}
-                                fill="url(#simulatedGradient)"
-                                dot={{ fill: '#10b981', strokeWidth: 0, r: 4 }}
-                                activeDot={{ r: 6.5 }}
-                                connectNulls={false}
-                                name="simulated"
-                            />
-                        )}
+
                     </ComposedChart>
                 </ResponsiveContainer>
             </CardContent>

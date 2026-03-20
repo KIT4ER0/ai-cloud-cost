@@ -7,6 +7,7 @@ import {
     LineChart,
     Activity,
     Lightbulb,
+    FlaskConical,
     LogOut,
     User
 } from "lucide-react"
@@ -27,6 +28,7 @@ export function Sidebar({ className }: SidebarProps) {
         { name: "Monitoring", href: "/monitoring", icon: Activity },
         { name: "Forecast Cost", href: "/forecast-cost", icon: LineChart },
         { name: "Recommendations", href: "/recommend", icon: Lightbulb },
+        { name: "Simulation", href: "/simulation", icon: FlaskConical },
         { name: "User Profile", href: "/profile", icon: User },
     ]
 

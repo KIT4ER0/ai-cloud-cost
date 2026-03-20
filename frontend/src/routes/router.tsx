@@ -5,6 +5,7 @@ import CostAnalysis from "@/pages/CostAnalysis"
 import ForecastCost from "@/pages/ForecastCost"
 import Monitoring from "@/pages/Monitoring"
 import Recommend from "@/pages/Recommend"
+import Simulation from "@/pages/Simulation"
 import Onboarding from "@/pages/Onboarding"
 import SignIn from "@/pages/SignIn"
 import Profile from "@/pages/Profile"
@@ -42,6 +43,10 @@ export const router = createBrowserRouter([
             {
                 path: "recommend",
                 element: <Recommend />,
+            },
+            {
+                path: "simulation",
+                element: <Simulation />,
             },
             {
                 path: "profile",

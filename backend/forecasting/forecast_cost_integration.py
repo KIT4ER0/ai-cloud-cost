@@ -46,6 +46,7 @@ def get_rds_resource_info(db: Session, resource_id: int) -> Dict:
         "instance_class": resource.instance_class,
         "storage_type": resource.storage_type or "gp3",
         "allocated_gb": resource.allocated_gb or 100,
+        "multi_az": resource.multi_az or False,
     }
 
 

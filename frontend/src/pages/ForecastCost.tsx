@@ -18,7 +18,7 @@ const AVAILABLE_SERVICES = [
 ]
 
 export default function ForecastCost() {
-    const [selectedServices, setSelectedServices] = useState<string[]>(['ec2', 'rds'])
+    const [selectedServices, setSelectedServices] = useState<string[]>([])
     const [baselinePeriod, setBaselinePeriod] = useState('3M')
     const [forecastPeriod, setForecastPeriod] = useState('1M')
     const [chartType, setChartType] = useState('line')
@@ -63,14 +63,16 @@ export default function ForecastCost() {
         setIsForecastRunning(true)
         
         try {
-            // Collect first resource from each selected service
+            // Collect all resources from each selected service
             const resourceItems: Array<{ service: string; resource_id: number }> = []
             for (const svc of selectedServices) {
                 const serviceData = resources[svc]
                 if (serviceData?.resources?.length > 0) {
-                    resourceItems.push({
-                        service: svc,
-                        resource_id: serviceData.resources[0].id,
+                    serviceData.resources.forEach(res => {
+                        resourceItems.push({
+                            service: svc,
+                            resource_id: res.id,
+                        })
                     })
                 }
             }
@@ -84,7 +86,12 @@ export default function ForecastCost() {
                 : forecastPeriod === '6M' ? 180 
                 : 365
             
-            await runMultiForecast({ resources: resourceItems, horizon })
+            const baseline_days = baselinePeriod === '1M' ? 30
+                : baselinePeriod === '3M' ? 90
+                : baselinePeriod === '6M' ? 180
+                : 90
+            
+            await runMultiForecast({ resources: resourceItems, horizon, baseline_days })
         } catch (err) {
             console.error('Forecast failed:', err)
         } finally {
@@ -124,33 +131,7 @@ export default function ForecastCost() {
             return transformForChart(forecastData!.results)
         }
         
-        // Only show mock data when no real data and not loading
-        if (!busy) {
-            const mockData = []
-            const today = new Date()
-            
-            // Generate 6 months forecast data only (no historical)
-            for (let i = 1; i <= 6; i++) {
-                const date = new Date(today)
-                date.setMonth(date.getMonth() + i)
-                
-                const baseValue = 2000 + Math.sin(i * 0.5) * 500
-                const trend = i * 100
-                const noise = Math.random() * 200 - 100
-                const value = Math.max(1000, baseValue + trend + noise)
-                
-                mockData.push({
-                    date: date.toISOString().split('T')[0],
-                    label: date.toLocaleDateString('en-US', { month: 'short', year: '2-digit' }),
-                    actual: undefined,
-                    baseline: value,
-                    simulated: undefined,
-                    isProjected: true,
-                })
-            }
-            return mockData
-        }
-        
+        // No real data, return empty array
         return []
     }, [hasForecastData, forecastData, transformForChart])
 
@@ -160,11 +141,16 @@ export default function ForecastCost() {
             const totalForecastCost = multiData.forecasts
                 .filter(f => !f.error && f.results.length > 0)
                 .reduce((sum, f) => {
-                    return sum + f.results.reduce((serviceSum, r) => serviceSum + (r.total_forecast_cost ?? 0), 0)
+                    // Each metric result (r) for the same resource contains the TOTAL resource cost.
+                    // To avoid double-counting, we only take the cost from the first result.
+                    const firstMetricCost = f.results[0]?.total_forecast_cost ?? 0
+                    return sum + firstMetricCost
                 }, 0)
             
             // DEBUG: Log summary calculation
             console.log('💳 DEBUG Summary Calculation:')
+            console.log('   Full multiData object:', multiData)
+            console.log('   last_month_cost from API:', multiData.last_month_cost)
             console.log('   Number of forecasts:', multiData.forecasts.length)
             multiData.forecasts.forEach((f, idx) => {
                 console.log(`   Forecast ${idx}: service=${f.service}, error=${!!f.error}`)
@@ -175,12 +161,11 @@ export default function ForecastCost() {
             })
             console.log('   Summary total:', totalForecastCost)
             
-            const totalDays = 30 // Assuming 30-day forecast period
-            const avgDailyCost = totalForecastCost / totalDays
+            const totalHistoryCost = multiData.last_month_cost ?? 0
             
             return {
                 forecastTotal: totalForecastCost,
-                avgMonthlyCost: avgDailyCost * 30,
+                lastMonthCost: totalHistoryCost,
                 simulatedSavings: 0,
                 changeFromBaseline: 0,
             }
@@ -192,23 +177,14 @@ export default function ForecastCost() {
             if (cs.hasCostData) {
                 return {
                     forecastTotal: cs.totalForecastCost,
-                    avgMonthlyCost: cs.avgDailyCost * 30,
+                    lastMonthCost: cs.lastMonthCost || 0,
                     simulatedSavings: 0,
                     changeFromBaseline: 0,
                 }
             }
         }
         
-        // Only show mock data when no real data and not loading
-        if (!busy) {
-            return {
-                forecastTotal: 12400,
-                avgMonthlyCost: 2800,
-                simulatedSavings: 0,
-                changeFromBaseline: 14.2,
-            }
-        }
-        
+        // No real data, return null
         return null
     }, [hasForecastData, forecastData, multiData, calculateCostSummary, busy])
 
@@ -221,24 +197,58 @@ export default function ForecastCost() {
 
         // Use multiData for per-service forecast breakdown
         if (multiData && multiData.forecasts.length > 0) {
-            const items = multiData.forecasts
+            // Group by service for aggregate view
+            const grouped = multiData.forecasts
                 .filter(f => !f.error && f.results.length > 0)
-                .map(f => {
-                    const totalCost = f.results.reduce((sum, r) => sum + (r.total_forecast_cost ?? 0), 0)
+                .reduce((acc, f) => {
+                    const serviceKey = f.service.toLowerCase()
+                    const totalCost = f.results[0]?.total_forecast_cost ?? 0
                     const mapes = f.results
                         .map(r => r.performance_metrics?.mape)
                         .filter((m): m is number => m != null)
-                    const avgMape = mapes.length > 0 ? mapes.reduce((a, b) => a + b, 0) / mapes.length : null
-                    return {
-                        service: f.service.toUpperCase() as any,
-                        resourceName: f.resource_name ?? `#${f.resource_id}`,
-                        cost: totalCost,
-                        percentage: 0,
-                        color: colors[f.service] ?? fallbackColors[0],
-                        metricsCount: f.results.length,
-                        avgMape,
+                    const avgResourceMape = mapes.length > 0 ? mapes.reduce((a, b) => a + b, 0) / mapes.length : null
+
+                    const isResourceFallback = f.results.some(r => r.fallback)
+                    const mainMethod = f.results[0]?.method || 'ensemble'
+
+                    if (!acc[serviceKey]) {
+                        acc[serviceKey] = {
+                            service: f.service.toUpperCase() as any,
+                            cost: 0,
+                            color: colors[serviceKey] ?? fallbackColors[0],
+                            metricsCount: 0,
+                            totalMape: 0,
+                            mapeCount: 0,
+                            resourceCount: 0,
+                            isFallback: false,
+                            methods: new Set<string>()
+                        }
                     }
-                })
+
+                    acc[serviceKey].cost += totalCost
+                    acc[serviceKey].metricsCount += f.results.length
+                    acc[serviceKey].resourceCount += 1
+                    if (isResourceFallback) acc[serviceKey].isFallback = true
+                    acc[serviceKey].methods.add(mainMethod)
+
+                    if (avgResourceMape !== null) {
+                        acc[serviceKey].totalMape += avgResourceMape
+                        acc[serviceKey].mapeCount += 1
+                    }
+                    return acc
+                }, {} as Record<string, any>)
+
+            const items = Object.values(grouped).map(item => ({
+                service: item.service,
+                cost: item.cost,
+                percentage: 0,
+                color: item.color,
+                metricsCount: item.metricsCount,
+                avgMape: item.mapeCount > 0 ? item.totalMape / item.mapeCount : null,
+                resourceName: `${item.resourceCount} resource${item.resourceCount > 1 ? 's' : ''}`,
+                isFallback: item.isFallback,
+                method: item.isFallback ? 'moving_average' : Array.from(item.methods as Set<string>)[0] || 'ensemble'
+            }))
 
             const grandTotal = items.reduce((s, i) => s + i.cost, 0)
             items.forEach(i => {
@@ -261,14 +271,7 @@ export default function ForecastCost() {
             }
         }
 
-        if (!busy) {
-            return [
-                { service: 'EC2' as any, cost: 5200, percentage: 42, color: '#6366f1' },
-                { service: 'RDS' as any, cost: 3100, percentage: 25, color: '#f59e0b' },
-                { service: 'EKS' as any, cost: 4100, percentage: 33, color: '#10b981' },
-            ]
-        }
-
+        // No real data, return null
         return null
     }, [hasForecastData, forecastData, multiData, calculateCostSummary, busy])
 
@@ -366,7 +369,6 @@ export default function ForecastCost() {
                                         <SelectItem value="1M">Last 1M</SelectItem>
                                         <SelectItem value="3M">Last 3M</SelectItem>
                                         <SelectItem value="6M">Last 6M</SelectItem>
-                                        <SelectItem value="12M">Last 12M</SelectItem>
                                     </SelectContent>
                                 </Select>
                             </div>
@@ -436,7 +438,7 @@ export default function ForecastCost() {
                             {summary && (
                                 <div>
                                     <h3 className="text-sm font-medium text-gray-700 mb-3">Summary Cards</h3>
-                                    <ForecastSummaryCards summary={summary} isSimulating={false} />
+                                    <ForecastSummaryCards summary={summary} />
                                 </div>
                             )}
 
@@ -462,8 +464,6 @@ export default function ForecastCost() {
                                 <h3 className="text-sm font-medium text-gray-700 mb-3">Forecast Visualization</h3>
                                 <ForecastChartCard
                                     data={chartData}
-                                    isSimulating={false}
-                                    onSimulationToggle={() => {}}
                                 />
                             </div>
 
@@ -475,38 +475,6 @@ export default function ForecastCost() {
                                 </div>
                             )}
 
-                            {/* Multi-Resource Results */}
-                            {multiData && multiData.forecasts.length > 1 && (
-                                <div>
-                                    <h3 className="text-sm font-medium text-gray-700 mb-3">Multi-Resource Results</h3>
-                                    <div className="space-y-2">
-                                        {multiData.forecasts.map((f, idx) => (
-                                            <div key={idx} className={`flex items-center justify-between p-3 rounded-lg border ${
-                                                f.error ? 'bg-red-50 border-red-200' : 'bg-green-50 border-green-200'
-                                            }`}>
-                                                <div>
-                                                    <span className="text-sm font-medium">{f.service.toUpperCase()}</span>
-                                                    <span className="text-xs text-gray-500 ml-2">
-                                                        {f.resource_name || `#${f.resource_id}`}
-                                                    </span>
-                                                </div>
-                                                <div className="text-xs">
-                                                    {f.error ? (
-                                                        <span className="text-red-600">Failed: {f.error}</span>
-                                                    ) : (
-                                                        <span className="text-green-700">
-                                                            {f.results.length} metric(s) forecasted
-                                                        </span>
-                                                    )}
-                                                </div>
-                                            </div>
-                                        ))}
-                                        <p className="text-xs text-gray-500 pt-1">
-                                            {multiData.successful}/{multiData.total_resources} resources forecasted successfully
-                                        </p>
-                                    </div>
-                                </div>
-                            )}
 
                             {/* Export Buttons */}
                             <div className="flex justify-end space-x-2 pt-4 border-t">

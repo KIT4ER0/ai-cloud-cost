@@ -7,6 +7,8 @@ interface ExtendedBreakdown extends ServiceBreakdown {
     resourceName?: string
     metricsCount?: number
     avgMape?: number | null
+    isFallback?: boolean
+    method?: string
 }
 
 interface ServiceBreakdownCardProps {
@@ -23,16 +25,18 @@ function CustomTooltip({ active, payload }: any) {
             {d.resourceName && (
                 <p className="text-gray-500">{d.resourceName}</p>
             )}
-            <p>Forecast Cost: <span className="font-medium">${d.cost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></p>
-            <p>Share: <span className="font-medium">{d.percentage}%</span></p>
-            {d.metricsCount != null && (
-                <p>Metrics: <span className="font-medium">{d.metricsCount}</span></p>
-            )}
-            {d.avgMape != null && (
-                <p>Avg MAPE: <span className={`font-medium ${d.avgMape < 15 ? 'text-green-600' : d.avgMape < 30 ? 'text-yellow-600' : 'text-red-600'}`}>
-                    {d.avgMape.toFixed(1)}%
+            <div className="pt-1 mt-1 border-t border-gray-100 space-y-1">
+                <p>Method: <span className={`font-medium ${d.isFallback ? 'text-amber-600' : 'text-primary'}`}>
+                    {d.method === 'ensemble' ? 'Ensemble' : 'Fallback'}
                 </span></p>
-            )}
+                <p>Forecast Cost: <span className="font-medium">${d.cost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></p>
+                <p>Share: <span className="font-medium">{d.percentage}%</span></p>
+                {d.avgMape != null && !d.isFallback && (
+                    <p>Avg MAPE: <span className={`font-medium ${d.avgMape < 15 ? 'text-green-600' : d.avgMape < 30 ? 'text-yellow-600' : 'text-red-600'}`}>
+                        {d.avgMape.toFixed(1)}%
+                    </span></p>
+                )}
+            </div>
         </div>
     )
 }
@@ -97,22 +101,31 @@ export function ServiceBreakdownCard({ breakdown }: ServiceBreakdownCardProps) {
                 {/* Legend */}
                 <div className="flex flex-wrap justify-center gap-4 mt-3 pt-3 border-t">
                     {breakdown.map((item) => (
-                        <div key={item.service} className="flex items-center gap-1.5 text-xs">
-                            <div
-                                className="w-2.5 h-2.5 rounded-full"
-                                style={{ backgroundColor: item.color }}
-                            />
-                            <span className="text-muted-foreground">{item.service}</span>
-                            <span className="font-semibold">{item.percentage}%</span>
-                            {item.avgMape != null && (
-                                <span className={`ml-1 px-1.5 py-0.5 rounded text-[10px] font-medium ${
-                                    item.avgMape < 15 ? 'bg-green-100 text-green-700' :
-                                    item.avgMape < 30 ? 'bg-yellow-100 text-yellow-700' :
-                                    'bg-red-100 text-red-700'
+                        <div key={item.service} className="flex flex-col gap-1 items-center">
+                            <div className="flex items-center gap-1.5 text-xs">
+                                <div
+                                    className="w-2.5 h-2.5 rounded-full"
+                                    style={{ backgroundColor: item.color }}
+                                />
+                                <span className="text-muted-foreground">{item.service}</span>
+                                <span className="font-semibold">{item.percentage}%</span>
+                            </div>
+                            <div className="flex gap-1">
+                                <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase ${
+                                    item.isFallback ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700'
                                 }`}>
-                                    MAPE {item.avgMape.toFixed(0)}%
+                                    {item.method === 'ensemble' ? 'Ensemble' : 'Fallback'}
                                 </span>
-                            )}
+                                {item.avgMape != null && !item.isFallback && (
+                                    <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${
+                                        item.avgMape < 15 ? 'bg-green-100 text-green-700' :
+                                        item.avgMape < 30 ? 'bg-yellow-100 text-yellow-700' :
+                                        'bg-red-100 text-red-700'
+                                    }`}>
+                                        MAPE {item.avgMape.toFixed(0)}%
+                                    </span>
+                                )}
+                            </div>
                         </div>
                     ))}
                 </div>

@@ -8,6 +8,7 @@ Provides functions to:
 """
 import logging
 from datetime import date
+from typing import Optional, List, Dict
 
 import pandas as pd
 from sqlalchemy.orm import Session
@@ -80,6 +81,7 @@ def load_metric_series(
     service: str,
     resource_id: int,
     metric_column: str,
+    days_back: Optional[int] = None,
 ) -> pd.DataFrame:
     """
     Load a single metric column as a time series from DB.
@@ -94,15 +96,17 @@ def load_metric_series(
     metric_model = cfg["model"]
     resource_id_col = cfg["resource_id_col"]
 
-    rows = (
-        db.query(
-            metric_model.metric_date,
-            getattr(metric_model, metric_column),
-        )
-        .filter(getattr(metric_model, resource_id_col) == resource_id)
-        .order_by(metric_model.metric_date)
-        .all()
-    )
+    query = db.query(
+        metric_model.metric_date,
+        getattr(metric_model, metric_column),
+    ).filter(getattr(metric_model, resource_id_col) == resource_id)
+
+    if days_back:
+        from datetime import date, timedelta
+        start_date = date.today() - timedelta(days=days_back)
+        query = query.filter(metric_model.metric_date >= start_date)
+
+    rows = query.order_by(metric_model.metric_date).all()
 
     if not rows:
         return pd.DataFrame(columns=["date", "value"])

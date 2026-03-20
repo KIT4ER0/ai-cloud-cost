@@ -714,6 +714,7 @@ def ensemble_forecast_metric(
     resource_id: int,
     metric_column: str,
     horizon: int = 30,
+    baseline_days: Optional[int] = None,
 ) -> dict:
     """
     Forecast future values ด้วย Enhanced Ensemble (ETS + SARIMA + Ridge).
@@ -750,7 +751,7 @@ def ensemble_forecast_metric(
     Raises:
         ValueError: ถ้า data น้อยกว่า MIN_ROWS_FOR_ENSEMBLE
     """
-    df = load_metric_series(db, service, resource_id, metric_column)
+    df = load_metric_series(db, service, resource_id, metric_column, days_back=baseline_days)
 
     if len(df) < MIN_ROWS_FOR_ENSEMBLE:
         raise ValueError(
@@ -806,6 +807,11 @@ def ensemble_forecast_metric(
     return {
         "metric": metric_column,
         "method": "ensemble",
+        "history": [
+            {"date": str(row["date"].date()) if hasattr(row["date"], "date") else str(row["date"]),
+             "value": round(float(row["value"]), 4)}
+            for _, row in original_df.iterrows()
+        ],
         "forecast_dates": forecast_dates,
         "forecast_values": [
             round(float(v), 4) for v in forecasts["ensemble"]
@@ -912,6 +918,7 @@ def run_ensemble_forecast(
     resource_id: int,
     metric: Optional[str],
     horizon: int = 30,
+    baseline_days: Optional[int] = None,
 ) -> dict:
     """
     Orchestrator — Drop-in replacement ของ run_xgboost_forecast()
@@ -970,6 +977,7 @@ def run_ensemble_forecast(
                 resource_id=resource_id,
                 metric_column=m,
                 horizon=horizon,
+                baseline_days=baseline_days,
             )
             forecast["fallback"] = False
 
@@ -1017,7 +1025,7 @@ def run_ensemble_forecast(
             logger.warning(
                 f"{fallback_reason} for {service}/{m} "
                 f"resource_id={resource_id}: {ens_err}. "
-                f"Falling back to moving average."
+                f"Falling back to seasonal_naive (7-day pattern)."
             )
             try:
                 fallback_result = forecast_metric(
@@ -1026,13 +1034,15 @@ def run_ensemble_forecast(
                     resource_id=resource_id,
                     metric_column=m,
                     horizon=horizon,
-                    method="moving_average",
-                    window=7,
-                    season_length=7,
+                    method="seasonal_naive",
+                    window=baseline_days or 7,
+                    # ใช้ baseline_days ที่ผู้ใช้เลือก แต่ clamp ไว้ที่ 7-30 วัน
+                    # เพื่อให้ seasonal pattern สอดคล้องกับระยะเวลาที่เลือก
+                    season_length=min(30, max(7, baseline_days or 7)),
                 )
                 fallback = {
                     "metric": m,
-                    "method": "moving_average",
+                    "method": "seasonal_naive",
                     "forecast_dates": [
                         item["date"] for item in fallback_result["forecast"]
                     ],
@@ -1092,10 +1102,130 @@ def run_ensemble_forecast(
             )
             
             if forecast_costs and cost_breakdown:
+                # Fetch last month's actual costs from the DB (instead of calculating via pricing)
+                history_costs = None
+                history_dates_str = None
+
+                try:
+                    from datetime import date as date_type, timedelta
+                    from sqlalchemy import func
+
+                    COST_MODEL_MAP = {
+                        "ec2":    ("models", "EC2Cost",    "ec2_resource_id"),
+                        "rds":    ("models", "RDSCost",    "rds_resource_id"),
+                        "lambda": ("models", "LambdaCost", "lambda_resource_id"),
+                        "s3":     ("models", "S3Cost",     "s3_resource_id"),
+                        "alb":    ("models", "ALBCost",    "alb_resource_id"),
+                    }
+
+                    cost_model_info = COST_MODEL_MAP.get(service)
+                    if cost_model_info:
+                        _, model_name, id_col = cost_model_info
+                        from .. import models as m_module
+                        cost_model = getattr(m_module, model_name)
+                        id_field = getattr(cost_model, id_col)
+
+                        today = date_type.today()
+                        # Last month's date range
+                        first_day_this_month = today.replace(day=1)
+                        last_day_prev_month = first_day_this_month - timedelta(days=1)
+                        first_day_prev_month = last_day_prev_month.replace(day=1)
+
+                        rows = (
+                            db.query(cost_model.usage_date, cost_model.amount_usd)
+                            .filter(
+                                id_field == resource_id,
+                                cost_model.usage_type == "total",
+                                cost_model.usage_date >= first_day_prev_month,
+                                cost_model.usage_date <= last_day_prev_month,
+                            )
+                            .order_by(cost_model.usage_date)
+                            .all()
+                        )
+
+                        if rows:
+                            history_costs = [float(row.amount_usd) for row in rows]
+                            history_dates_str = [str(row.usage_date) for row in rows]
+                            hist_total = sum(history_costs)
+                            hist_daily_avg = hist_total / len(history_costs)
+                            
+                            logger.info(
+                                f"Fetched {len(history_costs)} actual cost rows for {service}/{resource_id} "
+                                f"({first_day_prev_month} – {last_day_prev_month}), "
+                                f"total=${hist_total:.2f}, daily_avg=${hist_daily_avg:.2f}"
+                            )
+
+                            # ── Calibration ─────────────────────────────────────────
+                            # If history exists, we scale the forecast to match the REAL billing profile
+                            # (matches RIs, custom region pricing, etc.)
+                            if forecast_costs and len(forecast_costs) > 0:
+                                forecast_total = sum(forecast_costs)
+                                forecast_daily_avg = forecast_total / len(forecast_costs)
+                                
+                                if forecast_daily_avg > 0:
+                                    calibration_factor = hist_daily_avg / forecast_daily_avg
+                                    # Limit the factor for safety (e.g. max 5x change)
+                                    calibration_factor = max(0.2, min(5.0, calibration_factor))
+                                    
+                                    if abs(calibration_factor - 1.0) > 0.01:
+                                        logger.info(
+                                            f"Calibrating {service}/{resource_id} forecast by {calibration_factor:.2f}x "
+                                            f"to match history (${hist_daily_avg:.2f}/day)"
+                                        )
+                                        forecast_costs = [float(c * calibration_factor) for c in forecast_costs]
+                                        # Scale breakdown too
+                                        for key in cost_breakdown:
+                                            cost_breakdown[key] = [float(val * calibration_factor) for val in cost_breakdown[key]]
+                                
+                                # ── Seasonal Pattern from History ───────────────────
+                                # EC2/RDS มีต้นทุนส่วนใหญ่เป็น Fixed (Compute+Storage) ทำให้กราฟแบน
+                                # แก้ไขโดยการนำ Seasonal Ratio จาก Historical Costs จริง มา apply
+                                # กับ Forecast เพื่อให้กราฟขึ้นลงตาม Pattern การใช้จ่ายจริงในอดีต
+                                if len(history_costs) >= 7 and len(forecast_costs) > 0:
+                                    hist_avg = float(np.mean(history_costs)) if hist_daily_avg > 0 else 1.0
+                                    if hist_avg > 0:
+                                        seasonal_ratios = [c / hist_avg for c in history_costs]
+                                        n_hist = len(seasonal_ratios)
+                                        # Dampen the seasonal effect: blend 35% ratio + 65% flat (1.0)
+                                        # ป้องกันไม่ให้กราฟดูเหมือน copy มาจาก history
+                                        SEASONAL_STRENGTH = 0.35
+                                        dampened_ratios = [
+                                            1.0 + SEASONAL_STRENGTH * (r - 1.0)
+                                            for r in seasonal_ratios
+                                        ]
+                                        # Map each forecast day to a historical ratio (cycling)
+                                        seasoned_costs = [
+                                            forecast_costs[i] * dampened_ratios[i % n_hist]
+                                            for i in range(len(forecast_costs))
+                                        ]
+                                        # Preserve total — scale back to match original forecast sum
+                                        orig_sum = sum(forecast_costs)
+                                        new_sum = sum(seasoned_costs)
+                                        if new_sum > 0:
+                                            scale = orig_sum / new_sum
+                                            forecast_costs = [float(c * scale) for c in seasoned_costs]
+                                        logger.info(
+                                            f"Applied seasonal cost pattern to {service}/{resource_id} "
+                                            f"using {n_hist} historical days (strength={SEASONAL_STRENGTH})"
+                                        )
+                            # ────────────────────────────────────────────────────────
+
+                        else:
+                            logger.warning(
+                                f"No actual cost data in {service}_costs for resource_id={resource_id} "
+                                f"between {first_day_prev_month} and {last_day_prev_month}"
+                            )
+                except Exception as hist_err:
+                    logger.error(f"Error fetching historical costs from DB: {hist_err}")
+
                 # Add cost info to all successful results
                 for i, result in enumerate(results):
                     if result.get("method") != "none" and result.get("forecast_values"):
-                        results[i] = add_costs_to_forecast_result(result, forecast_costs, cost_breakdown)
+                        updated_result = add_costs_to_forecast_result(result, forecast_costs, cost_breakdown)
+                        if history_costs and history_dates_str:
+                            updated_result["history_costs"] = history_costs
+                            updated_result["history_dates"] = history_dates_str
+                        results[i] = updated_result
                 
                 # Update saved forecast records with cost data
                 # Find the first metric result to save costs (typically the primary metric)

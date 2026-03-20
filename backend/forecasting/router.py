@@ -358,6 +358,7 @@ def run_ensemble(
             resource_id=req.resource_id,
             metric=req.metric,
             horizon=req.horizon,
+            baseline_days=req.baseline_days,
         )
         elapsed = round(time.time() - t0, 2)
         n_results = len(result.get("results", []))
@@ -440,6 +441,7 @@ def run_multi_ensemble(
                 resource_id=item.resource_id,
                 metric=None,  # forecast all metrics
                 horizon=req.horizon,
+                baseline_days=req.baseline_days,
             )
             item_elapsed = round(time.time() - item_t0, 2)
             n_metrics = len(result.get("results", []))
@@ -477,9 +479,77 @@ def run_multi_ensemble(
         f"{successful}/{n_resources} OK, {failed_count} failed"
     )
 
+    # ── Calculate last 30 days actual total cost for ALL resources in selected services ──
+    # We join with resource tables to filter by profile_id, matching Cost Analysis logic.
+    last_month_cost: float = 0.0
+    debug_log = []
+    try:
+        from datetime import date as _date, timedelta as _td
+        from sqlalchemy import func as _func
+
+        # Map services to (CostModel, ResourceModel, FK_in_Cost, PK_in_Resource)
+        _COST_RESOURCE_MAP = {
+            "ec2":    (models.EC2Cost,    models.EC2Resource,    models.EC2Cost.ec2_resource_id,    models.EC2Resource.ec2_resource_id),
+            "rds":    (models.RDSCost,    models.RDSResource,    models.RDSCost.rds_resource_id,    models.RDSResource.rds_resource_id),
+            "lambda": (models.LambdaCost, models.LambdaResource, models.LambdaCost.lambda_resource_id, models.LambdaResource.lambda_resource_id),
+            "s3":     (models.S3Cost,     models.S3Resource,     models.S3Cost.s3_resource_id,     models.S3Resource.s3_resource_id),
+            "alb":    (models.ALBCost,    models.ALBResource,    models.ALBCost.alb_resource_id,    models.ALBResource.alb_resource_id),
+        }
+
+        today = _date.today()
+        end_date = today
+        start_date = today - _td(days=30)
+
+        # Get unique services requested
+        selected_services = set(item.service for item in req.resources)
+        
+        debug_log.append(f"Profile: {current_user.profile_id}, Services: {selected_services}")
+        debug_log.append(f"Period: {start_date} to {end_date}")
+
+        for svc in selected_services:
+            map_info = _COST_RESOURCE_MAP.get(svc)
+            if not map_info:
+                continue
+            cost_model, res_model, fk_col, pk_col = map_info
+            
+            # Sum all costs for this user and service in the last 30 days
+            total = db.query(_func.sum(cost_model.amount_usd)).join(
+                res_model, fk_col == pk_col
+            ).filter(
+                res_model.profile_id == current_user.profile_id,
+                cost_model.usage_type == "total",
+                cost_model.usage_date >= start_date,
+                cost_model.usage_date <= end_date,
+            ).scalar() or 0.0
+            
+            last_month_cost += float(total)
+            debug_log.append(f"  {svc}: sum=${float(total):.2f}")
+            
+            # Special case: Include EIP costs if EC2 is selected
+            if svc == "ec2":
+                eip_total = db.query(_func.sum(models.EC2EIPCost.amount_usd)).join(
+                    models.EC2ElasticIP, models.EC2EIPCost.eip_id == models.EC2ElasticIP.eip_id
+                ).filter(
+                    models.EC2ElasticIP.profile_id == current_user.profile_id,
+                    models.EC2EIPCost.usage_type == "total",
+                    models.EC2EIPCost.usage_date >= start_date,
+                    models.EC2EIPCost.usage_date <= end_date,
+                ).scalar() or 0.0
+                last_month_cost += float(eip_total)
+                debug_log.append(f"  eip (auto-included with ec2): sum=${float(eip_total):.2f}")
+
+    except Exception as lm_err:
+        debug_log.append(f"  ERROR: {str(lm_err)}")
+        logger.error(f"Error computing last_month_cost: {lm_err}")
+
+    # Write to temp log
+    with open("/tmp/debug_forecast.log", "w") as f:
+        f.write("\n".join(debug_log))
+
     return MultiEnsembleForecastResponse(
         total_resources=n_resources,
         successful=successful,
         failed=failed_count,
         forecasts=forecasts,
+        last_month_cost=round(last_month_cost, 2),
     )

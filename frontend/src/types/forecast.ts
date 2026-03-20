@@ -56,6 +56,8 @@ export interface ForecastDataPoint {
     label: string
     actual?: number
     baseline?: number
+    lower?: number
+    upper?: number
     simulated?: number
     isProjected: boolean
 }
@@ -63,7 +65,7 @@ export interface ForecastDataPoint {
 // Forecast Summary
 export interface ForecastSummary {
     forecastTotal: number
-    avgMonthlyCost: number
+    lastMonthCost: number
     simulatedSavings: number
     changeFromBaseline: number
 }
@@ -93,6 +95,8 @@ export interface ForecastMetricResult {
     cost_breakdown_totals?: {
         [costType: string]: number
     }
+    history_costs?: number[]
+    history_dates?: string[]
     created_at?: string
 }
 
@@ -163,6 +167,7 @@ export interface MultiEnsembleForecastResponse {
     successful: number
     failed: number
     forecasts: MultiEnsembleForecastResult[]
+    last_month_cost?: number
 }
 
 // Default settings
