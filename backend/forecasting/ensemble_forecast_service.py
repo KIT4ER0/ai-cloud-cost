@@ -428,8 +428,8 @@ def _forecast_sarima(
     """
     SARIMA สำหรับจับ seasonal pattern + trend
 
-    - (1,1,1)   : AR(1), differencing, MA(1) — จับ short-term pattern
-    - (1,1,1,s) : seasonal AR/MA + differencing ตาม detected period
+    - (1,0,1)   : AR(1), no differencing, MA(1) — จับ short-term pattern
+    - (1,1,1,7) : seasonal AR/MA + differencing weekly cycle
     - ต้องการข้อมูลอย่างน้อย 2 * seasonal_period
     """
     try:
@@ -440,15 +440,15 @@ def _forecast_sarima(
             # ข้อมูลน้อยมาก ใช้ ARIMA ธรรมดา (ไม่มี seasonal)
             model = SARIMAX(
                 values,
-                order=(1, 1, 1),
+                order=(1, 0, 1),
                 enforce_stationarity=False,
                 enforce_invertibility=False,
             ).fit(disp=False)
         else:
             model = SARIMAX(
                 values,
-                order=(1, 1, 1),
-                seasonal_order=(1, 1, 1, seasonal_period),
+                order=(1, 0, 1),
+                seasonal_order=(1, 1, 1, 7),
                 enforce_stationarity=False,
                 enforce_invertibility=False,
             ).fit(disp=False)
