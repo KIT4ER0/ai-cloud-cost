@@ -61,6 +61,8 @@ def connect_aws(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+    print(f"✨ [SUCCESS] AWS STS: Assume Role successful for ARN: {req.role_arn}")
+
     # Persist the role ARN directly to the user profile
     current_user.aws_role_arn = req.role_arn
     db.commit()
