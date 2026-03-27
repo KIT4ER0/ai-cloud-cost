@@ -75,24 +75,22 @@ def _calculate_error_metrics(
     actual: np.ndarray,
     predicted: np.ndarray,
 ) -> dict:
-    """Calculate MAE, RMSE, and MAPE."""
+    """Calculate MAE, RMSE, and WMAPE."""
     actual = np.array(actual, dtype=float)
     predicted = np.array(predicted, dtype=float)
 
     mae = float(np.mean(np.abs(actual - predicted)))
     rmse = float(np.sqrt(np.mean((actual - predicted) ** 2)))
 
-    mask = actual != 0
-    mape = (
-        float(
-            np.mean(
-                np.abs((actual[mask] - predicted[mask]) / actual[mask])
-            )
-        )
-        * 100
-        if np.any(mask)
-        else 0.0
-    )
+    # Use WMAPE (Weighted MAPE) instead of standard MAPE.
+    # Standard MAPE blows up when actual values are near zero.
+    # WMAPE weights the error by the actual volume, which is the industry
+    # standard for cloud metrics (like network transfer or cost).
+    sum_actual = float(np.sum(np.abs(actual)))
+    if sum_actual > 0:
+        mape = float(np.sum(np.abs(actual - predicted)) / sum_actual) * 100
+    else:
+        mape = 0.0
 
     return {
         "mae": round(mae, 4),
@@ -267,6 +265,24 @@ def apply_exponential_smoothing(values: np.ndarray, alpha: float = 0.3) -> np.nd
         smoothed[i] = alpha * values[i] + (1 - alpha) * smoothed[i-1]
     
     return smoothed
+
+
+def cap_outliers_iqr(values: np.ndarray, multiplier: float = 2.0) -> np.ndarray:
+    """
+    Cap extreme outliers using the Interquartile Range (IQR) method.
+    Useful for removing random spikes in cloud metrics before modeling.
+    """
+    if len(values) < 7:
+        return values
+    
+    q1 = np.percentile(values, 25)
+    q3 = np.percentile(values, 75)
+    iqr = q3 - q1
+    
+    lower_bound = max(0, q1 - multiplier * iqr)
+    upper_bound = q3 + multiplier * iqr
+    
+    return np.clip(values, lower_bound, upper_bound)
 
 
 def get_adaptive_mape_threshold(volatility_level: str) -> float:
@@ -621,7 +637,13 @@ def _ensemble_backtest(
     # ── 1. Detect volatility & seasonality ────────────────────────
     volatility_info = _detect_volatility_pattern(train_values)
 
-    has_seasonality, seasonal_periods = detect_seasonality(train_values)
+    # Cap outliers if extremely volatile
+    if volatility_info.get("classification", {}).get("volatility_level") in ("high", "extreme"):
+        capped_train_values = cap_outliers_iqr(train_values)
+    else:
+        capped_train_values = train_values
+
+    has_seasonality, seasonal_periods = detect_seasonality(capped_train_values)
     best_seasonal_period = seasonal_periods[0] if seasonal_periods else 7
     volatility_info['seasonality'] = {
         'has_seasonality': has_seasonality,
@@ -638,7 +660,7 @@ def _ensemble_backtest(
     # Run a *first pass* without backtest-driven weights to get each
     # model's independent forecast on the test window.
     first_pass = _ensemble_forecast(
-        train_values, test_size, last_train_date,
+        capped_train_values, test_size, last_train_date,
         volatility_info, use_enhanced_transform,
         seasonal_period=best_seasonal_period,
         backtest_mapes=None,  # volatility-based weights only
@@ -659,7 +681,7 @@ def _ensemble_backtest(
 
     # ── 3. Re-run ensemble with backtest-driven weights ───────────
     forecasts = _ensemble_forecast(
-        train_values, test_size, last_train_date,
+        capped_train_values, test_size, last_train_date,
         volatility_info, use_enhanced_transform,
         seasonal_period=best_seasonal_period,
         backtest_mapes=per_model_mape,
@@ -778,6 +800,12 @@ def ensemble_forecast_metric(
     best_seasonal_period = seasonality_info.get("best_period", 7)
     per_model_mape = performance_metrics.get("per_model_mape")
 
+    if volatility_info.get("classification", {}).get("volatility_level") in ("high", "extreme"):
+        capped_values = cap_outliers_iqr(values)
+        logger.info(f"Applied IQR outlier capping for {service}/{metric_column} due to high volatility.")
+    else:
+        capped_values = values
+
     # Determine if enhanced transform should be used
     use_enhanced_transform = (
         _should_use_log_transform(service, metric_column) or 
@@ -786,7 +814,7 @@ def ensemble_forecast_metric(
 
     # Run enhanced ensemble forecast with backtest-driven weights
     forecasts = _ensemble_forecast(
-        values, horizon, last_date, 
+        capped_values, horizon, last_date, 
         volatility_info, use_enhanced_transform,
         seasonal_period=best_seasonal_period,
         backtest_mapes=per_model_mape,
@@ -966,10 +994,13 @@ def run_ensemble_forecast(
     else:
         metrics_to_run = get_available_metrics(service)
 
+    RESOURCE_FALLBACK_THRESHOLD = 65.0  # ตรงกับ Threshold ที่แสดงบน UI
+
     results = []
+    ensemble_results = []  # เก็บผล Ensemble ของทุก Metric ก่อน ค่อยตัดสิน
 
     for m in metrics_to_run:
-        # ── 1. Try Ensemble ───────────────────────────────────────
+        # ── 1. Try Ensemble (ไม่ตัดสิน Fallback ต่อ Metric อีกต่อไป) ──
         try:
             forecast = ensemble_forecast_metric(
                 db=db,
@@ -980,20 +1011,43 @@ def run_ensemble_forecast(
                 baseline_days=baseline_days,
             )
             forecast["fallback"] = False
+            ensemble_results.append(forecast)
+            logger.info(
+                f"Ensemble OK — {service}/{m} "
+                f"MAPE={forecast.get('performance_metrics', {}).get('mape', 'N/A')}%"
+            )
+        except Exception as ens_err:
+            logger.warning(
+                f"Ensemble failed for {service}/{m} "
+                f"resource_id={resource_id}: {ens_err}"
+            )
+            ensemble_results.append(None)  # mark as failed
 
-            # Check MAPE-based fallback guard with adaptive threshold
-            should_fallback = forecast.get("should_fallback", False)
-            mape_value = forecast.get("performance_metrics", {}).get("mape", 0)
-            adaptive_threshold = forecast.get("adaptive_threshold", 50.0)
-            
-            if should_fallback:
-                logger.warning(
-                    f"Ensemble MAPE too high ({mape_value}% > {adaptive_threshold}%) for {service}/{m} "
-                    f"resource_id={resource_id}. Falling back to baseline."
-                )
-                # Don't save ensemble result, proceed to baseline
-                raise Exception(f"MAPE fallback triggered: {mape_value}% > {adaptive_threshold}%")
+    # ── 2. คำนวณ avg MAPE ระดับ Resource (เหมือน UI คำนวณ) ─────────
+    mapes = [
+        r.get("performance_metrics", {}).get("mape")
+        for r in ensemble_results if r is not None
+        and r.get("performance_metrics", {}).get("mape") is not None
+    ]
+    avg_resource_mape = sum(mapes) / len(mapes) if mapes else None
 
+    use_fallback = (
+        avg_resource_mape is not None and avg_resource_mape > RESOURCE_FALLBACK_THRESHOLD
+    ) or any(r is None for r in ensemble_results)
+
+    if avg_resource_mape is not None:
+        logger.info(
+            f"Resource-level avg MAPE = {avg_resource_mape:.1f}% "
+            f"(threshold={RESOURCE_FALLBACK_THRESHOLD}%) → "
+            f"{'FALLBACK' if use_fallback else 'ENSEMBLE OK'}"
+        )
+
+    # ── 3a. ถ้า avg MAPE ≤ 65% → บันทึก Ensemble ─────────────────
+    if not use_fallback:
+        for forecast in ensemble_results:
+            if forecast is None:
+                continue
+            m = forecast["metric"]
             save_ensemble_forecast(
                 db=db,
                 service=service,
@@ -1004,29 +1058,20 @@ def run_ensemble_forecast(
                 forecast_values=forecast["forecast_values"],
                 backtest_data=forecast.get("performance_metrics"),
             )
-
             results.append(forecast)
-            log_msg = (
-                f"Enhanced Ensemble OK — {service}/{m} "
-                f"MAPE={forecast['performance_metrics'].get('mape', 'N/A')}%"
-            )
-            if forecast.get("enhanced_transform_used"):
-                log_msg += f" [{forecast['transform_type']}]"
-            if forecast.get("seasonality_info", {}).get("has_seasonality"):
-                log_msg += " [Seasonal]"
-            if forecast.get("volatility_info", {}).get("is_volatile"):
-                log_msg += " [Volatile]"
-            log_msg += f" Weights={forecast.get('weights_used', {})}"
-            logger.info(log_msg)
 
-        # ── 2. Fallback: moving average ───────────────────────────
-        except Exception as ens_err:
-            fallback_reason = "MAPE too high" if "MAPE fallback" in str(ens_err) else "Ensemble failed"
-            logger.warning(
-                f"{fallback_reason} for {service}/{m} "
-                f"resource_id={resource_id}: {ens_err}. "
-                f"Falling back to seasonal_naive (7-day pattern)."
-            )
+    # ── 3b. ถ้า avg MAPE > 65% → Fallback ทุก Metric ─────────────
+    else:
+        fallback_reason = (
+            f"Resource avg MAPE too high ({avg_resource_mape:.1f}% > {RESOURCE_FALLBACK_THRESHOLD}%)"
+            if avg_resource_mape is not None
+            else "Ensemble failed for one or more metrics"
+        )
+        logger.warning(
+            f"{fallback_reason} for {service} resource_id={resource_id}. "
+            f"Falling back to moving_average ({baseline_days or 7}-day window) for all metrics."
+        )
+        for m in metrics_to_run:
             try:
                 fallback_result = forecast_metric(
                     db=db,
@@ -1034,25 +1079,18 @@ def run_ensemble_forecast(
                     resource_id=resource_id,
                     metric_column=m,
                     horizon=horizon,
-                    method="seasonal_naive",
+                    method="moving_average",
                     window=baseline_days or 7,
-                    # ใช้ baseline_days ที่ผู้ใช้เลือก แต่ clamp ไว้ที่ 7-30 วัน
-                    # เพื่อให้ seasonal pattern สอดคล้องกับระยะเวลาที่เลือก
-                    season_length=min(30, max(7, baseline_days or 7)),
+                    season_length=7,
                 )
                 fallback = {
                     "metric": m,
-                    "method": "seasonal_naive",
-                    "forecast_dates": [
-                        item["date"] for item in fallback_result["forecast"]
-                    ],
-                    "forecast_values": [
-                        item["forecast"] for item in fallback_result["forecast"]
-                    ],
+                    "method": "moving_average",
+                    "forecast_dates": [item["date"] for item in fallback_result["forecast"]],
+                    "forecast_values": [item["forecast"] for item in fallback_result["forecast"]],
                     "fallback": True,
                     "fallback_reason": fallback_reason,
                 }
-
                 save_ensemble_forecast(
                     db=db,
                     service=service,
@@ -1062,9 +1100,8 @@ def run_ensemble_forecast(
                     forecast_dates=fallback["forecast_dates"],
                     forecast_values=fallback["forecast_values"],
                 )
-
                 results.append(fallback)
-                logger.info(f"Baseline fallback OK — {service}/{m}")
+                logger.info(f"Fallback OK — {service}/{m}")
 
         # ── 3. Both failed ────────────────────────────────────────
             except Exception as base_err:

@@ -28,7 +28,7 @@ SERVICE_METRIC_MAP: dict[str, dict] = {
         "resource_model": models.EC2Resource,
         "resource_id_col": "ec2_resource_id",
         "resource_lookup": "instance_id",
-        "metrics": ["network_out", "hours_running","eip_hours_idle","ebs_snapshot_total_gb"],
+        "metrics": ["network_out", "hours_running", "cpu_utilization"],
     },
     "rds": {
         "model": models.RDSMetric,

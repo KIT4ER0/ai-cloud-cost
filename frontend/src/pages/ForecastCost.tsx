@@ -366,7 +366,6 @@ export default function ForecastCost() {
                                         <SelectValue />
                                     </SelectTrigger>
                                     <SelectContent>
-                                        <SelectItem value="1M">Last 1M</SelectItem>
                                         <SelectItem value="3M">Last 3M</SelectItem>
                                         <SelectItem value="6M">Last 6M</SelectItem>
                                     </SelectContent>

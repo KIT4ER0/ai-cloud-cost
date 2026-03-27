@@ -32,7 +32,13 @@ function CustomTooltip({ active, payload }: any) {
                 <p>Forecast Cost: <span className="font-medium">${d.cost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></p>
                 <p>Share: <span className="font-medium">{d.percentage}%</span></p>
                 {d.avgMape != null && !d.isFallback && (
-                    <p>Avg MAPE: <span className={`font-medium ${d.avgMape < 15 ? 'text-green-600' : d.avgMape < 30 ? 'text-yellow-600' : 'text-red-600'}`}>
+                    <p>Avg MAPE: <span className={`font-medium ${
+                        d.avgMape < 35 ? 'text-green-600' :
+                        d.avgMape < 45 ? 'text-lime-600' :
+                        d.avgMape < 55 ? 'text-yellow-600' :
+                        d.avgMape < 65 ? 'text-orange-500' :
+                        'text-red-600'
+                    }`}>
                         {d.avgMape.toFixed(1)}%
                     </span></p>
                 )}
@@ -118,8 +124,10 @@ export function ServiceBreakdownCard({ breakdown }: ServiceBreakdownCardProps) {
                                 </span>
                                 {item.avgMape != null && !item.isFallback && (
                                     <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${
-                                        item.avgMape < 15 ? 'bg-green-100 text-green-700' :
-                                        item.avgMape < 30 ? 'bg-yellow-100 text-yellow-700' :
+                                        item.avgMape < 35 ? 'bg-green-100 text-green-700' :
+                                        item.avgMape < 45 ? 'bg-lime-100 text-lime-700' :
+                                        item.avgMape < 55 ? 'bg-yellow-100 text-yellow-700' :
+                                        item.avgMape < 65 ? 'bg-orange-100 text-orange-700' :
                                         'bg-red-100 text-red-700'
                                     }`}>
                                         MAPE {item.avgMape.toFixed(0)}%
