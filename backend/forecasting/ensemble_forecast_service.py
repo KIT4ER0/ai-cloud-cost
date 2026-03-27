@@ -1069,7 +1069,7 @@ def run_ensemble_forecast(
         )
         logger.warning(
             f"{fallback_reason} for {service} resource_id={resource_id}. "
-            f"Falling back to moving_average ({baseline_days or 7}-day window) for all metrics."
+            f"Falling back to moving_average ({baseline_days or 90}-day window) for all metrics."
         )
         for m in metrics_to_run:
             try:
@@ -1080,7 +1080,7 @@ def run_ensemble_forecast(
                     metric_column=m,
                     horizon=horizon,
                     method="moving_average",
-                    window=baseline_days or 7,
+                    window=baseline_days or 90,
                     season_length=7,
                 )
                 fallback = {
