@@ -397,16 +397,14 @@ export default function Monitoring() {
         return years
     }, [metrics])
 
-    // Auto-select latest year+month when metrics load
+    // Auto-select last month when metrics load
     useEffect(() => {
         if (metrics.length === 0) return
         if (!selectedYear || !selectedMonthNum) {
-            const dates = metrics.map((m) => m.metric_date).filter(Boolean).sort()
-            if (dates.length > 0) {
-                const latest = dates[dates.length - 1]
-                setSelectedYear(latest.substring(0, 4))
-                setSelectedMonthNum(latest.substring(5, 7))
-            }
+            const lastMonth = new Date()
+            lastMonth.setDate(0) // Safe way to get the previous month
+            setSelectedYear(String(lastMonth.getFullYear()))
+            setSelectedMonthNum(String(lastMonth.getMonth() + 1).padStart(2, '0'))
         }
     }, [metrics, selectedYear, selectedMonthNum])
 

@@ -143,7 +143,7 @@ function KPICard({
 }
 
 export default function CostAnalysis() {
-    const [timeRange, setTimeRange] = useState<TimeRange>("this_month")
+    const [timeRange, setTimeRange] = useState<TimeRange>("last_month")
     const [viewMode, setViewMode] = useState<ViewMode>("cost")
     const [displayTab, setDisplayTab] = useState<"drivers" | "resources">("drivers")
     const [data, setData] = useState<CostAnalysisData | null>(null)
