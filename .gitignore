@@ -1,5 +1,8 @@
 .env
 .venv
 node_modules
-__pycache__/
-*.pyc
+.agents/
+.gemini/
+skills-lock.json
+.vscode/
+.DS_Store
