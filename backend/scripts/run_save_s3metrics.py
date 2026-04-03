@@ -1,15 +1,16 @@
 """
-Standalone script: Smart sync EC2 CloudWatch metrics.
+Standalone script: Smart sync S3 CloudWatch metrics.
 
 Usage:
-    python -m backend.scripts.run_save_ec2metrics [--region us-east-1]
+    python -m backend.scripts.run_save_s3metrics [--region us-east-1]
 
 Flow:
     1. Query all user_profiles that have aws_role_arn configured
     2. For each profile:
        a. AssumeRole into the customer's AWS account
-       b. Call smart_sync_ec2_metrics() which:
+       b. Call smart_sync_s3_metrics() which:
           - Checks DB for existing metrics per resource
+          - Detects gap dates and new dates
           - Pulls only missing dates from CloudWatch
           - Saves new metric rows via upsert
 """
@@ -22,19 +23,19 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
 from backend.database import SessionLocal
-from backend.models import UserProfile, EC2Resource
+from backend.models import UserProfile, S3Resource
 from backend.services.aws_sts import get_assumed_session
-# from backend.services.metrics_ec2 import smart_sync_ec2_metrics
+from backend.services.metrics_s3 import smart_sync_s3_metrics
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
-logger = logging.getLogger("run_save_ec2metrics")
+logger = logging.getLogger("run_save_s3metrics")
 
 
 def run(region: str = "us-east-1", profile_id: int = None):
-    """Main entry point: iterate profiles → smart sync."""
+    """Main entry point: iterate profiles → smart sync S3 metrics."""
     db = SessionLocal()
     try:
         # 1. Find profiles with AWS role configured
@@ -63,7 +64,7 @@ def run(region: str = "us-east-1", profile_id: int = None):
             try:
                 session = get_assumed_session(
                     role_arn=profile.aws_role_arn,
-                    session_name=f"cron-ec2-{profile.profile_id}",
+                    session_name=f"cron-s3-{profile.profile_id}",
                     external_id=profile.aws_external_id,
                 )
             except Exception as e:
@@ -76,24 +77,24 @@ def run(region: str = "us-east-1", profile_id: int = None):
             except Exception:
                 logger.warning(f"  Could not get account_id via STS, falling back to existing resources")
                 first_resource = (
-                    db.query(EC2Resource)
+                    db.query(S3Resource)
                     .filter_by(profile_id=profile.profile_id)
                     .first()
                 )
                 account_id = first_resource.account_id if first_resource else "unknown"
 
-            # 4. Smart sync — checks DB, pulls only missing, saves
+            # 4. Smart sync — checks DB, pulls only missing (+ gaps), saves
             try:
-                from backend.mock.mock_metrics_ec2 import mock_smart_sync_ec2_metrics
-                mock_smart_sync_ec2_metrics(
+                from backend.mock.mock_metrics_s3 import mock_smart_sync_s3_metrics
+                mock_smart_sync_s3_metrics(
                     db=db,
                     account_id=account_id,
                     region=region,
                     profile_id=profile.profile_id,
                 )
-                logger.info(f"  ✅ Mock Smart sync completed for profile {profile.profile_id}")
+                logger.info(f"  ✅ MOCK Smart sync completed for profile {profile.profile_id}")
                 # For Sync
-                # smart_sync_ec2_metrics(
+                # smart_sync_s3_metrics(
                 #     customer_session=session,
                 #     account_id=account_id,
                 #     region=region,
@@ -111,10 +112,10 @@ def run(region: str = "us-east-1", profile_id: int = None):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Smart sync EC2 CloudWatch metrics")
+    parser = argparse.ArgumentParser(description="Smart sync S3 CloudWatch metrics")
     parser.add_argument("--region", type=str, default="us-east-1", help="AWS region (default: us-east-1)")
     parser.add_argument("--profile-id", type=int, help="Optional profile_id to filter")
     args = parser.parse_args()
 
-    logger.info(f"Starting EC2 smart metric sync: region={args.region}, profile_id={args.profile_id}")
+    logger.info(f"Starting S3 smart metric sync: region={args.region}, profile_id={args.profile_id}")
     run(region=args.region, profile_id=args.profile_id)

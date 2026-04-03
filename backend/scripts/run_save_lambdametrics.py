@@ -1,15 +1,16 @@
 """
-Standalone script: Smart sync EC2 CloudWatch metrics.
+Standalone script: Smart sync Lambda CloudWatch metrics.
 
 Usage:
-    python -m backend.scripts.run_save_ec2metrics [--region us-east-1]
+    python -m backend.scripts.run_save_lambdametrics [--region us-east-1]
 
 Flow:
     1. Query all user_profiles that have aws_role_arn configured
     2. For each profile:
        a. AssumeRole into the customer's AWS account
-       b. Call smart_sync_ec2_metrics() which:
+       b. Call smart_sync_lambda_metrics() which:
           - Checks DB for existing metrics per resource
+          - Detects gap dates and new dates
           - Pulls only missing dates from CloudWatch
           - Saves new metric rows via upsert
 """
@@ -22,19 +23,19 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
 from backend.database import SessionLocal
-from backend.models import UserProfile, EC2Resource
+from backend.models import UserProfile, LambdaResource
 from backend.services.aws_sts import get_assumed_session
-# from backend.services.metrics_ec2 import smart_sync_ec2_metrics
+from backend.services.metrics_lambda import smart_sync_lambda_metrics
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
-logger = logging.getLogger("run_save_ec2metrics")
+logger = logging.getLogger("run_save_lambdametrics")
 
 
 def run(region: str = "us-east-1", profile_id: int = None):
-    """Main entry point: iterate profiles → smart sync."""
+    """Main entry point: iterate profiles → smart sync Lambda metrics."""
     db = SessionLocal()
     try:
         # 1. Find profiles with AWS role configured
@@ -47,7 +48,7 @@ def run(region: str = "us-east-1", profile_id: int = None):
             query = query.filter(UserProfile.profile_id == profile_id)
             
         profiles = query.all()
-        logger.info(f"Found {len(profiles)} profiles to process")
+        logger.info(f"Found {len(profiles)} profiles with AWS role configured")
 
         if not profiles:
             logger.warning("No profiles found, nothing to do.")
@@ -63,7 +64,7 @@ def run(region: str = "us-east-1", profile_id: int = None):
             try:
                 session = get_assumed_session(
                     role_arn=profile.aws_role_arn,
-                    session_name=f"cron-ec2-{profile.profile_id}",
+                    session_name=f"cron-lambda-{profile.profile_id}",
                     external_id=profile.aws_external_id,
                 )
             except Exception as e:
@@ -76,30 +77,17 @@ def run(region: str = "us-east-1", profile_id: int = None):
             except Exception:
                 logger.warning(f"  Could not get account_id via STS, falling back to existing resources")
                 first_resource = (
-                    db.query(EC2Resource)
+                    db.query(LambdaResource)
                     .filter_by(profile_id=profile.profile_id)
                     .first()
                 )
                 account_id = first_resource.account_id if first_resource else "unknown"
 
-            # 4. Smart sync — checks DB, pulls only missing, saves
+            # 4. Smart sync — checks DB, pulls only missing (+ gaps), saves
             try:
-                from backend.mock.mock_metrics_ec2 import mock_smart_sync_ec2_metrics
-                mock_smart_sync_ec2_metrics(
-                    db=db,
-                    account_id=account_id,
-                    region=region,
-                    profile_id=profile.profile_id,
-                )
+                from backend.mock.mock_metrics_lambda import mock_smart_sync_lambda_metrics
+                mock_smart_sync_lambda_metrics(db=db, account_id=account_id, region=region, profile_id=profile.profile_id)
                 logger.info(f"  ✅ Mock Smart sync completed for profile {profile.profile_id}")
-                # For Sync
-                # smart_sync_ec2_metrics(
-                #     customer_session=session,
-                #     account_id=account_id,
-                #     region=region,
-                #     profile_id=profile.profile_id,
-                # )
-                # logger.info(f"  ✅ Smart sync completed for profile {profile.profile_id}")
             except Exception as e:
                 logger.error(f"  Failed smart sync for profile {profile.profile_id}: {e}")
                 continue
@@ -111,10 +99,10 @@ def run(region: str = "us-east-1", profile_id: int = None):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Smart sync EC2 CloudWatch metrics")
+    parser = argparse.ArgumentParser(description="Smart sync Lambda CloudWatch metrics")
     parser.add_argument("--region", type=str, default="us-east-1", help="AWS region (default: us-east-1)")
-    parser.add_argument("--profile-id", type=int, help="Optional profile_id to filter")
+    parser.add_argument("--profile-id", type=int, help="Specific profile ID to sync (optional)")
     args = parser.parse_args()
 
-    logger.info(f"Starting EC2 smart metric sync: region={args.region}, profile_id={args.profile_id}")
+    logger.info(f"Starting Lambda smart metric sync: region={args.region}, profile_id={args.profile_id}")
     run(region=args.region, profile_id=args.profile_id)
