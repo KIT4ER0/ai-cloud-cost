@@ -1,3 +1,8 @@
 .env
 .venv
 node_modules
+.agents/
+.gemini/
+skills-lock.json
+.vscode/
+.DS_Store
